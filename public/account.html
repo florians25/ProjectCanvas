@@ -35,6 +35,7 @@
 (async () => {
   const me = await App.navbar('account');
   const msg = (cls, t) => { document.getElementById('msg').innerHTML = '<div class="alert alert-' + cls + '">' + App.esc(t) + '</div>'; };
+  if (me.mustChange) msg('warning', 'Bitte zuerst ein eigenes Passwort festlegen. Erst danach sind die Projekte erreichbar.');
   document.getElementById('name').value = me.name;
   document.getElementById('emailInfo').textContent = 'E-Mail: ' + me.email + (me.role === 'admin' ? ' (Admin)' : '');
   document.getElementById('nameForm').addEventListener('submit', async (e) => {
@@ -46,6 +47,7 @@
     e.preventDefault();
     try {
       await App.api('POST', '/me', { password: document.getElementById('pwOld').value, newPassword: document.getElementById('pwNew').value });
+      if (me.mustChange) { location.href = '/'; return; }
       msg('success', 'Passwort geändert.'); e.target.reset();
     } catch (err) { msg('danger', err.message); }
   });

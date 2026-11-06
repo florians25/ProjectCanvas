@@ -31,10 +31,11 @@ Dann <http://localhost:3000> öffnen. Die Daten liegen im Docker-Volume `osp-dat
 
 ## Benutzerkonten
 
+**Standard-Admin beim ersten Start:** Benutzername `admin`, Passwort `admin`.
+Beim ersten Anmelden muss ein eigenes Passwort gesetzt werden, vorher ist nichts anderes erreichbar.
+
 1. Jede Person registriert sich unter `/register` (Name, E-Mail, Passwort).
 2. Danach ist das Konto **gesperrt, bis ein Admin es freischaltet** (Menüpunkt „Benutzerverwaltung“, offene Anfragen sind mit einer Zahl markiert).
-3. **Erster Admin:** Die allererste Registrierung wird automatisch Admin. Alternativ in `docker-compose.yml`
-   `ADMIN_EMAIL` setzen, dann wird nur diese E-Mail-Adresse bei der Registrierung Admin.
 
 Admins können freischalten, ablehnen, sperren, andere zu Admins machen, Passwörter neu setzen und Projekte löschen.
 Alle freigeschalteten Benutzer sehen und bearbeiten alle Projekte.
@@ -45,7 +46,8 @@ Alle freigeschalteten Benutzer sehen und bearbeiten alle Projekte.
 |---|---|---|
 | `PORT` | `3000` | HTTP-Port |
 | `DATA_DIR` | `/data` | Speicherort (Benutzer, Sitzungen, ein JSON pro Projekt) |
-| `ADMIN_EMAIL` | leer | E-Mail, die bei Registrierung Admin wird |
+| `ADMIN_LOGIN` | `admin` | Benutzername des Standard-Admins (nur beim ersten Start, wenn noch kein Admin existiert) |
+| `ADMIN_PASSWORD` | `admin` | Start-Passwort des Standard-Admins (muss beim ersten Login geändert werden) |
 | `COOKIE_SECURE` | `false` | `true` setzen, wenn über HTTPS betrieben |
 
 Im Internet hinter einen Reverse-Proxy mit HTTPS stellen. WebSockets laufen über `/ws` und müssen durchgereicht werden,

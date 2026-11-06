@@ -6,8 +6,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # E-Mail, die bei der Registrierung automatisch Admin wird (leer = erste Registrierung wird Admin)
-      ADMIN_EMAIL: ""
+      # Standard-Admin beim ersten Start (Passwort muss beim ersten Login geändert werden)
+      ADMIN_LOGIN: "admin"
+      ADMIN_PASSWORD: "admin"
       # auf "true" setzen, wenn die Seite über HTTPS (Reverse-Proxy) läuft
       COOKIE_SECURE: "false"
     volumes:

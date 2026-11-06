@@ -38,9 +38,7 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   if (v('pw') !== v('pw2')) { msg.innerHTML = '<div class="alert alert-danger">Die Passwörter stimmen nicht überein.</div>'; return; }
   try {
     const r = await App.api('POST', '/register', { name: v('name'), email: v('email'), password: v('pw') });
-    document.getElementById('box').innerHTML = r.active
-      ? '<div class="alert alert-success mb-0">Registrierung erfolgreich. Du bist Admin und kannst dich direkt <a href="/login">anmelden</a>.</div>'
-      : '<div class="alert alert-success mb-0">Registrierung erfolgreich. Dein Konto muss jetzt von einem Admin freigeschaltet werden. Danach kannst du dich <a href="/login">anmelden</a>.</div>';
+    document.getElementById('box').innerHTML = '<div class="alert alert-success mb-0">Registrierung erfolgreich. Dein Konto muss jetzt von einem Admin freigeschaltet werden. Danach kannst du dich <a href="/login">anmelden</a>.</div>';
   } catch (err) {
     msg.innerHTML = '<div class="alert alert-danger">' + App.esc(err.message) + '</div>';
   }

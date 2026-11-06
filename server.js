@@ -13,7 +13,9 @@ const Ops = require('./public/ops.js');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+// Standard-Admin (wird angelegt, wenn noch kein Admin existiert; Passwort muss beim ersten Login geändert werden)
+const ADMIN_LOGIN = (process.env.ADMIN_LOGIN || 'admin').trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
 const SESSION_DAYS = 30;
 const PROJ_DIR = path.join(DATA_DIR, 'projects');
@@ -55,7 +57,17 @@ function checkPassword(pw, stored) {
   return ref.length === h.length && crypto.timingSafeEqual(h, ref);
 }
 
-const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, createdAt: u.createdAt });
+const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, createdAt: u.createdAt, mustChange: !!u.mustChange });
+
+if (!users.some((u) => u.role === 'admin')) {
+  users = users.filter((u) => u.email !== ADMIN_LOGIN);
+  users.push({
+    id: newId(9), name: 'Administrator', email: ADMIN_LOGIN, pw: hashPassword(ADMIN_PASSWORD),
+    role: 'admin', status: 'active', mustChange: true, createdAt: Date.now(),
+  });
+  saveUsers();
+  console.log(`Standard-Admin angelegt: Login "${ADMIN_LOGIN}" (Passwort muss beim ersten Login geändert werden)`);
+}
 
 // ---------- Sitzungen ----------
 
@@ -153,6 +165,7 @@ const page = (file) => (req, res) => res.sendFile(path.join(PUB, file), { header
 const needPage = (file, admin) => (req, res) => {
   const u = userFromReq(req);
   if (!u) return res.redirect('/login');
+  if (u.mustChange && file !== 'account.html') return res.redirect('/konto');
   if (admin && u.role !== 'admin') return res.redirect('/');
   page(file)(req, res);
 };
@@ -174,6 +187,7 @@ const api = express.Router();
 const auth = (req, res, next) => {
   const u = userFromReq(req);
   if (!u) return res.status(401).json({ error: 'Nicht angemeldet' });
+  if (u.mustChange && req.path !== '/me') return res.status(403).json({ error: 'Bitte zuerst das Passwort ändern.' });
   req.user = u;
   next();
 };
@@ -189,12 +203,7 @@ api.post('/register', (req, res) => {
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Bitte gültige E-Mail-Adresse angeben.' });
   if (pw.length < 8) return res.status(400).json({ error: 'Das Passwort muss mindestens 8 Zeichen haben.' });
   if (users.some((u) => u.email === email)) return res.status(400).json({ error: 'Diese E-Mail-Adresse ist bereits registriert.' });
-  // Erster Admin: ADMIN_EMAIL (falls gesetzt), sonst die allererste Registrierung
-  const isAdmin = ADMIN_EMAIL ? email === ADMIN_EMAIL : users.length === 0;
-  const u = {
-    id: newId(9), name, email, pw: hashPassword(pw),
-    role: isAdmin ? 'admin' : 'user', status: isAdmin ? 'active' : 'pending', createdAt: Date.now(),
-  };
+  const u = { id: newId(9), name, email, pw: hashPassword(pw), role: 'user', status: 'pending', createdAt: Date.now() };
   users.push(u);
   saveUsers();
   res.json({ ok: true, active: u.status === 'active' });
@@ -239,7 +248,9 @@ api.post('/me', auth, (req, res) => {
   if (req.body.newPassword !== undefined) {
     if (!checkPassword(String(req.body.password || ''), u.pw)) return res.status(400).json({ error: 'Aktuelles Passwort ist falsch.' });
     if (String(req.body.newPassword).length < 8) return res.status(400).json({ error: 'Das neue Passwort muss mindestens 8 Zeichen haben.' });
+    if (String(req.body.newPassword) === String(req.body.password)) return res.status(400).json({ error: 'Das neue Passwort muss sich vom alten unterscheiden.' });
     u.pw = hashPassword(String(req.body.newPassword));
+    delete u.mustChange;
   }
   saveUsers();
   res.json({ ok: true });
@@ -325,7 +336,7 @@ server.on('upgrade', (req, socket, head) => {
   const user = userFromReq(req);
   const room = loadProject(url.searchParams.get('p') || '');
   const badOrigin = origin && new URL(origin).host !== host;
-  if (url.pathname !== '/ws' || !user || !room || badOrigin) {
+  if (url.pathname !== '/ws' || !user || user.mustChange || !room || badOrigin) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
