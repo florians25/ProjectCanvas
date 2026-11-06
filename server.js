@@ -1,331 +1,390 @@
 'use strict';
 /**
- * Project Canvas – Echtzeit-Server
- * Keine Accounts: Wer den Link (lange, zufällige ID) kennt, kann bearbeiten.
+ * OSP-Projektmanagement – Server
+ * Konten mit Freischaltung durch Admin, Projekte mit Live-Zusammenarbeit (WebSocket).
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const express = require('express');
 const { WebSocketServer } = require('ws');
+const Ops = require('./public/ops.js');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const MAX_NOTES = 1500;
-const MAX_TEXT = 4000;
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+const SESSION_DAYS = 30;
+const PROJ_DIR = path.join(DATA_DIR, 'projects');
+fs.mkdirSync(PROJ_DIR, { recursive: true });
 
-const SECTIONS = new Set([
-  'ziel', 'kriterien_muss', 'kriterien_nicht', 'erfolg',
-  'meilensteine', 'arbeitspakete', 'ergebnis',
-  'team', 'stakeholder', 'nutzer',
-  'ressourcen', 'umfeld', 'risiken',
-]);
-const FIELDS = new Set(['projectName', 'leader', 'owner']);
-const COLORS = new Set(['yellow', 'pink', 'blue', 'green', 'orange', 'purple', 'white']);
+// ---------- Speicher (JSON-Dateien, atomar geschrieben) ----------
 
-// 32 Bytes Zufall → 43 Zeichen base64url (~256 Bit, nicht erratbar)
-const ID_RE = /^[A-Za-z0-9_-]{32,64}$/;
-const NOTE_ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
+function readJson(file, def) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; }
+}
+function writeJson(file, data) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data));
+  fs.renameSync(tmp, file);
+}
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+let users = readJson(USERS_FILE, []);
+let sessions = readJson(SESSIONS_FILE, {});
+const saveUsers = () => writeJson(USERS_FILE, users);
+let sessTimer = null;
+const saveSessions = () => { clearTimeout(sessTimer); sessTimer = setTimeout(() => writeJson(SESSIONS_FILE, sessions), 200); };
 
-/** id -> { doc, clients:Set<ws>, saveTimer } */
+const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
+
+// ---------- Passwörter ----------
+
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(pw, salt, 64);
+  return `scrypt$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+function checkPassword(pw, stored) {
+  const [, salt, hash] = String(stored).split('$');
+  if (!salt || !hash) return false;
+  const h = crypto.scryptSync(pw, Buffer.from(salt, 'base64'), 64);
+  const ref = Buffer.from(hash, 'base64');
+  return ref.length === h.length && crypto.timingSafeEqual(h, ref);
+}
+
+const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, createdAt: u.createdAt });
+
+// ---------- Sitzungen ----------
+
+function parseCookies(header) {
+  const out = {};
+  for (const part of String(header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function userFromReq(req) {
+  const token = parseCookies(req.headers.cookie).sid;
+  const s = token && sessions[token];
+  if (!s) return null;
+  if (s.exp < Date.now()) { delete sessions[token]; saveSessions(); return null; }
+  const u = users.find((x) => x.id === s.userId);
+  if (!u || u.status !== 'active') return null;
+  return u;
+}
+
+function setSessionCookie(res, token, maxAgeSec) {
+  res.setHeader('Set-Cookie', `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${COOKIE_SECURE ? '; Secure' : ''}`);
+}
+
+function endSessionsOf(userId) {
+  for (const [t, s] of Object.entries(sessions)) if (s.userId === userId) delete sessions[t];
+  saveSessions();
+  for (const ws of wss.clients) if (ws.user && ws.user.id === userId) ws.close(4001, 'logout');
+}
+
+// Einfache Bremse gegen Passwort-Raten
+const attempts = new Map();
+function tooManyAttempts(ip) {
+  const now = Date.now();
+  const a = (attempts.get(ip) || []).filter((t) => now - t < 15 * 60 * 1000);
+  attempts.set(ip, a);
+  return a.length >= 20;
+}
+function noteAttempt(ip) { (attempts.get(ip) || attempts.set(ip, []).get(ip)).push(Date.now()); }
+
+// ---------- Projekte ----------
+
+/** id -> { doc, clients:Set, timer } */
 const rooms = new Map();
+const projFile = (id) => path.join(PROJ_DIR, id + '.json');
+const PID_RE = /^[A-Za-z0-9_-]{8,40}$/;
 
-function newId() {
-  return crypto.randomBytes(32).toString('base64url');
-}
-
-function filePath(id) {
-  return path.join(DATA_DIR, id + '.json');
-}
-
-function emptyDoc(id) {
-  return {
-    id,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    fields: { projectName: '', leader: '', owner: '' },
-    notes: {},
-  };
-}
-
-function loadDoc(id) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath(id), 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function saveDocNow(room) {
-  clearTimeout(room.saveTimer);
-  room.saveTimer = null;
-  const fp = filePath(room.doc.id);
-  const tmp = fp + '.tmp';
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(room.doc));
-    fs.renameSync(tmp, fp);
-  } catch (e) {
-    console.error('Speichern fehlgeschlagen', room.doc.id, e.message);
-  }
-}
-
-function scheduleSave(room) {
-  room.doc.updatedAt = Date.now();
-  if (!room.saveTimer) room.saveTimer = setTimeout(() => saveDocNow(room), 800);
-}
-
-function getRoom(id) {
+function loadProject(id) {
+  if (!PID_RE.test(id)) return null;
   let room = rooms.get(id);
   if (room) return room;
-  const doc = loadDoc(id);
+  const doc = readJson(projFile(id), null);
   if (!doc) return null;
-  room = { doc, clients: new Set(), saveTimer: null };
+  // fehlende Bereiche ergänzen (z. B. nach Updates)
+  const empty = Ops.emptyProject(id);
+  for (const k of Object.keys(empty)) if (doc[k] === undefined) doc[k] = empty[k];
+  room = { doc, clients: new Set(), timer: null };
   rooms.set(id, room);
   return room;
 }
-
-function createRoom() {
-  const id = newId();
-  const room = { doc: emptyDoc(id), clients: new Set(), saveTimer: null };
-  rooms.set(id, room);
-  saveDocNow(room);
-  return room;
+function saveNow(room) {
+  clearTimeout(room.timer); room.timer = null;
+  if (room.deleted) return;
+  try { writeJson(projFile(room.doc.id), room.doc); } catch (e) { console.error('Speichern fehlgeschlagen', e.message); }
 }
-
-// ---------- Operationen (serverseitig validiert, Last-Write-Wins) ----------
-
-function str(v, max) {
-  return typeof v === 'string' ? v.slice(0, max) : '';
+function scheduleSave(room) {
+  room.doc.updatedAt = Date.now();
+  if (!room.timer) room.timer = setTimeout(() => saveNow(room), 700);
 }
-
-function cleanNote(n) {
-  const note = {
-    id: n.id,
-    section: n.section,
-    text: str(n.text, MAX_TEXT),
-    color: COLORS.has(n.color) ? n.color : 'yellow',
-    order: Number.isFinite(n.order) ? n.order : Date.now(),
-    author: str(n.author, 40),
-    updatedAt: Date.now(),
-  };
-  if (typeof n.date === 'string' && /^\d{4}-\d{2}-\d{2}$|^$/.test(n.date)) note.date = n.date;
-  if (typeof n.done === 'boolean') note.done = n.done;
-  return note;
-}
-
-/** Wendet eine Operation an. Gibt die (bereinigte) Operation zurück oder null. */
-function applyOp(doc, op) {
-  if (!op || typeof op !== 'object') return null;
-  switch (op.t) {
-    case 'add': {
-      const n = op.note;
-      if (!n || !NOTE_ID_RE.test(n.id) || !SECTIONS.has(n.section)) return null;
-      if (doc.notes[n.id]) return null;
-      if (Object.keys(doc.notes).length >= MAX_NOTES) return null;
-      const note = cleanNote(n);
-      doc.notes[note.id] = note;
-      return { t: 'add', note };
-    }
-    case 'update': {
-      const note = doc.notes[op.id];
-      if (!note || !op.patch || typeof op.patch !== 'object') return null;
-      const p = op.patch;
-      const patch = {};
-      if ('text' in p) patch.text = str(p.text, MAX_TEXT);
-      if ('color' in p && COLORS.has(p.color)) patch.color = p.color;
-      if ('section' in p && SECTIONS.has(p.section)) patch.section = p.section;
-      if ('order' in p && Number.isFinite(p.order)) patch.order = p.order;
-      if ('date' in p && typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}$|^$/.test(p.date)) patch.date = p.date;
-      if ('done' in p && typeof p.done === 'boolean') patch.done = p.done;
-      if (!Object.keys(patch).length) return null;
-      Object.assign(note, patch, { updatedAt: Date.now() });
-      return { t: 'update', id: op.id, patch };
-    }
-    case 'delete': {
-      if (!doc.notes[op.id]) return null;
-      delete doc.notes[op.id];
-      return { t: 'delete', id: op.id };
-    }
-    case 'field': {
-      if (!FIELDS.has(op.key)) return null;
-      const value = str(op.value, 200);
-      doc.fields[op.key] = value;
-      return { t: 'field', key: op.key, value };
-    }
-    default:
-      return null;
-  }
+function listProjects() {
+  return fs.readdirSync(PROJ_DIR).filter((f) => f.endsWith('.json')).map((f) => {
+    const id = f.slice(0, -5);
+    const d = rooms.get(id)?.doc || readJson(projFile(id), null);
+    return d && { id: d.id, name: d.name, createdAt: d.createdAt, updatedAt: d.updatedAt || d.createdAt };
+  }).filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 // ---------- HTTP ----------
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.json': 'application/json',
+const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 'loopback');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
+app.use(express.json({ limit: '2mb' }));
+
+const PUB = path.join(__dirname, 'public');
+const page = (file) => (req, res) => res.sendFile(path.join(PUB, file), { headers: { 'Cache-Control': 'no-cache' } });
+const needPage = (file, admin) => (req, res) => {
+  const u = userFromReq(req);
+  if (!u) return res.redirect('/login');
+  if (admin && u.role !== 'admin') return res.redirect('/');
+  page(file)(req, res);
 };
 
-const SEC_HEADERS = {
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer', // Canvas-ID nicht an Dritte leaken
-  'X-Frame-Options': 'SAMEORIGIN',
+app.use('/static', express.static(PUB, { index: false, maxAge: 0 }));
+app.use('/vendor/bootstrap', express.static(path.join(__dirname, 'node_modules/bootstrap/dist'), { maxAge: '7d' }));
+
+app.get('/healthz', (req, res) => res.send('ok'));
+app.get('/login', page('login.html'));
+app.get('/register', page('register.html'));
+app.get('/', needPage('index.html'));
+app.get('/konto', needPage('account.html'));
+app.get('/admin', needPage('admin.html', true));
+app.get('/p/:id', (req, res, next) => (loadProject(req.params.id) ? needPage('project.html')(req, res) : next()));
+app.get('/p/:id/canvas', (req, res, next) => (loadProject(req.params.id) ? needPage('canvas.html')(req, res) : next()));
+
+// --- API: Konto ---
+const api = express.Router();
+const auth = (req, res, next) => {
+  const u = userFromReq(req);
+  if (!u) return res.status(401).json({ error: 'Nicht angemeldet' });
+  req.user = u;
+  next();
 };
+const admin = (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'Nur für Admins' }));
 
-function send(res, status, body, type = 'text/plain; charset=utf-8', extra = {}) {
-  res.writeHead(status, { 'Content-Type': type, ...SEC_HEADERS, ...extra });
-  res.end(body);
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function serveFile(res, file) {
-  fs.readFile(file, (err, data) => {
-    if (err) return send(res, 404, 'Nicht gefunden');
-    send(res, 200, data, MIME[path.extname(file)] || 'application/octet-stream', {
-      'Cache-Control': 'no-cache',
-    });
-  });
-}
-
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  const p = url.pathname;
-
-  if (req.method === 'GET' && p === '/') return serveFile(res, path.join(PUBLIC_DIR, 'index.html'));
-
-  if (req.method === 'GET' && p === '/healthz') return send(res, 200, 'ok');
-
-  // Neues Canvas anlegen → Weiterleitung auf den Link
-  if ((req.method === 'POST' || req.method === 'GET') && p === '/new') {
-    const room = createRoom();
-    return send(res, 303, '', 'text/plain', { Location: '/c/' + room.doc.id });
-  }
-
-  let m = p.match(/^\/c\/([^/]+)$/);
-  if (req.method === 'GET' && m) {
-    if (!ID_RE.test(m[1]) || !getRoom(m[1])) {
-      return serveFile(res, path.join(PUBLIC_DIR, 'notfound.html'));
-    }
-    return serveFile(res, path.join(PUBLIC_DIR, 'canvas.html'));
-  }
-
-  m = p.match(/^\/api\/canvas\/([^/]+)\/export$/);
-  if (req.method === 'GET' && m) {
-    const room = ID_RE.test(m[1]) && getRoom(m[1]);
-    if (!room) return send(res, 404, 'Nicht gefunden');
-    const name = (room.doc.fields.projectName || 'project-canvas').replace(/[^\w\-äöüÄÖÜß ]+/g, '').trim() || 'project-canvas';
-    return send(res, 200, JSON.stringify(room.doc, null, 2), 'application/json', {
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(name)}.json"`,
-    });
-  }
-
-  // Import: JSON hochladen → neues Canvas
-  if (req.method === 'POST' && p === '/api/import') {
-    let body = '';
-    let tooBig = false;
-    req.on('data', (c) => {
-      body += c;
-      if (body.length > 2_000_000) { tooBig = true; req.destroy(); }
-    });
-    req.on('end', () => {
-      if (tooBig) return;
-      try {
-        const src = JSON.parse(body);
-        const room = createRoom();
-        for (const k of FIELDS) applyOp(room.doc, { t: 'field', key: k, value: src.fields?.[k] });
-        for (const n of Object.values(src.notes || {})) {
-          applyOp(room.doc, { t: 'add', note: { ...n, id: NOTE_ID_RE.test(n.id) ? n.id : newId().slice(0, 16) } });
-        }
-        saveDocNow(room);
-        send(res, 200, JSON.stringify({ id: room.doc.id }), 'application/json');
-      } catch {
-        send(res, 400, 'Ungültige Datei');
-      }
-    });
-    return;
-  }
-
-  m = p.match(/^\/static\/([\w.-]+)$/);
-  if (req.method === 'GET' && m) return serveFile(res, path.join(PUBLIC_DIR, m[1]));
-
-  send(res, 404, 'Nicht gefunden');
+api.post('/register', (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  const email = String(req.body.email || '').trim().toLowerCase().slice(0, 200);
+  const pw = String(req.body.password || '');
+  if (!name) return res.status(400).json({ error: 'Bitte Namen angeben.' });
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Bitte gültige E-Mail-Adresse angeben.' });
+  if (pw.length < 8) return res.status(400).json({ error: 'Das Passwort muss mindestens 8 Zeichen haben.' });
+  if (users.some((u) => u.email === email)) return res.status(400).json({ error: 'Diese E-Mail-Adresse ist bereits registriert.' });
+  // Erster Admin: ADMIN_EMAIL (falls gesetzt), sonst die allererste Registrierung
+  const isAdmin = ADMIN_EMAIL ? email === ADMIN_EMAIL : users.length === 0;
+  const u = {
+    id: newId(9), name, email, pw: hashPassword(pw),
+    role: isAdmin ? 'admin' : 'user', status: isAdmin ? 'active' : 'pending', createdAt: Date.now(),
+  };
+  users.push(u);
+  saveUsers();
+  res.json({ ok: true, active: u.status === 'active' });
 });
 
-// ---------- WebSocket ----------
+api.post('/login', (req, res) => {
+  const ip = req.ip;
+  if (tooManyAttempts(ip)) return res.status(429).json({ error: 'Zu viele Versuche. Bitte 15 Minuten warten.' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const u = users.find((x) => x.email === email);
+  if (!u || !checkPassword(String(req.body.password || ''), u.pw)) {
+    noteAttempt(ip);
+    return res.status(400).json({ error: 'E-Mail oder Passwort falsch.' });
+  }
+  if (u.status === 'pending') return res.status(403).json({ error: 'Dein Konto wurde noch nicht freigeschaltet. Bitte warte auf die Freischaltung durch einen Admin.' });
+  if (u.status === 'blocked') return res.status(403).json({ error: 'Dein Konto ist gesperrt.' });
+  const token = newId(32);
+  sessions[token] = { userId: u.id, exp: Date.now() + SESSION_DAYS * 86400000 };
+  saveSessions();
+  setSessionCookie(res, token, SESSION_DAYS * 86400);
+  res.json({ ok: true });
+});
 
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
+api.post('/logout', (req, res) => {
+  const token = parseCookies(req.headers.cookie).sid;
+  if (token && sessions[token]) { delete sessions[token]; saveSessions(); }
+  setSessionCookie(res, '', 0);
+  res.json({ ok: true });
+});
+
+api.get('/me', auth, (req, res) => {
+  res.json({ ...publicUser(req.user), pending: req.user.role === 'admin' ? users.filter((u) => u.status === 'pending').length : 0 });
+});
+
+api.post('/me', auth, (req, res) => {
+  const u = req.user;
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name).trim().slice(0, 80);
+    if (!name) return res.status(400).json({ error: 'Name darf nicht leer sein.' });
+    u.name = name;
+  }
+  if (req.body.newPassword !== undefined) {
+    if (!checkPassword(String(req.body.password || ''), u.pw)) return res.status(400).json({ error: 'Aktuelles Passwort ist falsch.' });
+    if (String(req.body.newPassword).length < 8) return res.status(400).json({ error: 'Das neue Passwort muss mindestens 8 Zeichen haben.' });
+    u.pw = hashPassword(String(req.body.newPassword));
+  }
+  saveUsers();
+  res.json({ ok: true });
+});
+
+// Namen aller freigeschalteten Nutzer (für Personen-Auswahl)
+api.get('/users', auth, (req, res) => {
+  res.json(users.filter((u) => u.status === 'active').map((u) => ({ id: u.id, name: u.name })));
+});
+
+// --- API: Admin ---
+api.get('/admin/users', auth, admin, (req, res) => res.json(users.map(publicUser)));
+
+api.post('/admin/users/:id', auth, admin, (req, res) => {
+  const u = users.find((x) => x.id === req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nicht gefunden' });
+  const self = u.id === req.user.id;
+  const action = req.body.action;
+  if (self && ['block', 'removeAdmin', 'delete'].includes(action)) return res.status(400).json({ error: 'Das geht nicht mit dem eigenen Konto.' });
+  switch (action) {
+    case 'approve': u.status = 'active'; break;
+    case 'block': u.status = 'blocked'; endSessionsOf(u.id); break;
+    case 'makeAdmin': u.role = 'admin'; break;
+    case 'removeAdmin': u.role = 'user'; break;
+    case 'resetPassword': {
+      const pw = String(req.body.password || '');
+      if (pw.length < 8) return res.status(400).json({ error: 'Mindestens 8 Zeichen.' });
+      u.pw = hashPassword(pw);
+      endSessionsOf(u.id);
+      break;
+    }
+    case 'delete':
+      users = users.filter((x) => x.id !== u.id);
+      endSessionsOf(u.id);
+      break;
+    default: return res.status(400).json({ error: 'Unbekannte Aktion' });
+  }
+  saveUsers();
+  res.json({ ok: true });
+});
+
+// --- API: Projekte ---
+api.get('/projects', auth, (req, res) => res.json(listProjects()));
+
+api.post('/projects', auth, (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 200) || 'Neues Projekt';
+  const id = newId(12);
+  const doc = Ops.emptyProject(id, name, req.user.name);
+  writeJson(projFile(id), doc);
+  res.json({ id });
+});
+
+api.delete('/projects/:id', auth, admin, (req, res) => {
+  const room = loadProject(req.params.id);
+  if (!room) return res.status(404).json({ error: 'Nicht gefunden' });
+  room.deleted = true;
+  clearTimeout(room.timer);
+  for (const ws of room.clients) ws.close(4004, 'deleted');
+  rooms.delete(req.params.id);
+  fs.renameSync(projFile(req.params.id), projFile(req.params.id) + '.deleted');
+  res.json({ ok: true });
+});
+
+api.get('/projects/:id/export', auth, (req, res) => {
+  const room = loadProject(req.params.id);
+  if (!room) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.setHeader('Content-Disposition', `attachment; filename="projekt-${room.doc.id}.json"`);
+  res.json(room.doc);
+});
+
+app.use('/api', api);
+app.use((req, res) => res.status(404).sendFile(path.join(PUB, 'notfound.html')));
+
+// ---------- WebSocket (Live-Zusammenarbeit) ----------
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, 'http://x');
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  const user = userFromReq(req);
+  const room = loadProject(url.searchParams.get('p') || '');
+  const badOrigin = origin && new URL(origin).host !== host;
+  if (url.pathname !== '/ws' || !user || !room || badOrigin) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, room, user));
+});
 
 function broadcast(room, msg, except) {
   const data = JSON.stringify(msg);
-  for (const c of room.clients) {
-    if (c !== except && c.readyState === 1) c.send(data);
-  }
+  for (const c of room.clients) if (c !== except && c.readyState === 1) c.send(data);
 }
+const peers = (room) => [...room.clients].map((c) => c.peer);
 
-function peerList(room) {
-  return [...room.clients].map((c) => c.peer);
-}
-
-wss.on('connection', (ws, req) => {
-  const url = new URL(req.url, 'http://localhost');
-  const id = url.searchParams.get('c') || '';
-  const room = ID_RE.test(id) && getRoom(id);
-  if (!room) {
-    ws.close(4004, 'not found');
-    return;
-  }
-
+wss.on('connection', (ws, room, user) => {
+  ws.user = user;
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
-
-  ws.peer = {
-    id: crypto.randomBytes(6).toString('base64url'),
-    name: str(url.searchParams.get('name'), 40) || 'Gast',
-    color: /^#[0-9a-fA-F]{6}$/.test(url.searchParams.get('color') || '') ? url.searchParams.get('color') : '#888888',
-    focus: null,
-  };
-
+  ws.peer = { id: newId(6), userId: user.id, name: user.name, focus: null };
   room.clients.add(ws);
-  ws.send(JSON.stringify({ type: 'init', doc: room.doc, you: ws.peer.id, peers: peerList(room) }));
-  broadcast(room, { type: 'peers', peers: peerList(room) }, ws);
+  ws.send(JSON.stringify({ type: 'init', doc: room.doc, you: ws.peer.id, user: publicUser(user), peers: peers(room) }));
+  broadcast(room, { type: 'peers', peers: peers(room) }, ws);
 
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === 'ops' && Array.isArray(msg.ops)) {
       const applied = [];
-      for (const op of msg.ops.slice(0, 200)) {
-        const r = applyOp(room.doc, op);
-        if (r) applied.push(r);
-      }
+      for (const op of msg.ops.slice(0, 500)) applied.push(...Ops.apply(room.doc, op));
       if (applied.length) {
         scheduleSave(room);
-        broadcast(room, { type: 'ops', ops: applied, from: ws.peer.id }, ws);
+        broadcast(room, { type: 'ops', ops: applied }, ws);
       }
+    } else if (msg.type === 'snapshot') {
+      // Entwicklungsschritt des Canvas speichern
+      const snap = {
+        id: newId(8), label: String(msg.label || '').slice(0, 200) || 'Version', at: Date.now(), by: user.name,
+        name: room.doc.name, leader: room.doc.meta.leader || '', owner: room.doc.meta.owner || '',
+        notes: JSON.parse(JSON.stringify(room.doc.notes)),
+      };
+      room.doc.canvasVersions.push(snap);
+      scheduleSave(room);
+      broadcast(room, { type: 'snapshot', snap });
+    } else if (msg.type === 'delsnapshot') {
+      room.doc.canvasVersions = room.doc.canvasVersions.filter((s) => s.id !== msg.id);
+      scheduleSave(room);
+      broadcast(room, { type: 'delsnapshot', id: msg.id });
     } else if (msg.type === 'presence') {
-      if ('name' in msg) ws.peer.name = str(msg.name, 40) || 'Gast';
-      if ('color' in msg && /^#[0-9a-fA-F]{6}$/.test(msg.color)) ws.peer.color = msg.color;
-      if ('focus' in msg) ws.peer.focus = typeof msg.focus === 'string' ? msg.focus.slice(0, 40) : null;
-      broadcast(room, { type: 'peers', peers: peerList(room) });
+      ws.peer.focus = typeof msg.focus === 'string' ? msg.focus.slice(0, 60) : null;
+      broadcast(room, { type: 'peers', peers: peers(room) });
     }
   });
 
   ws.on('close', () => {
     room.clients.delete(ws);
-    broadcast(room, { type: 'peers', peers: peerList(room) });
-    if (room.clients.size === 0) {
-      saveDocNow(room);
-      rooms.delete(id);
-    }
+    broadcast(room, { type: 'peers', peers: peers(room) });
+    if (room.clients.size === 0 && !room.deleted) { saveNow(room); rooms.delete(room.doc.id); }
   });
 });
 
-// Tote Verbindungen aufräumen
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     if (!ws.isAlive) { ws.terminate(); continue; }
@@ -336,12 +395,12 @@ const heartbeat = setInterval(() => {
 
 function shutdown() {
   clearInterval(heartbeat);
-  for (const room of rooms.values()) if (room.saveTimer) saveDocNow(room);
+  for (const room of rooms.values()) if (room.timer) saveNow(room);
+  clearTimeout(sessTimer);
+  writeJson(SESSIONS_FILE, sessions);
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(PORT, () => {
-  console.log(`Project Canvas läuft auf http://localhost:${PORT}  (Daten: ${DATA_DIR})`);
-});
+server.listen(PORT, () => console.log(`OSP-Projektmanagement läuft auf http://localhost:${PORT} (Daten: ${DATA_DIR})`));

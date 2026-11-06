@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<title>Registrieren - OSP-Projektmanagement</title>
+</head>
+<body class="bg-light">
+<main class="container py-5" style="max-width:420px">
+  <h1 class="h3 mb-4">OSP-Projektmanagement</h1>
+  <div class="card"><div class="card-body" id="box">
+    <h2 class="h5 mb-3">Registrieren</h2>
+    <p class="text-muted small">Nach der Registrierung muss ein Admin dein Konto freischalten. Erst danach kannst du dich anmelden.</p>
+    <div id="msg"></div>
+    <form id="f">
+      <div class="mb-3"><label class="form-label" for="name">Vor- und Nachname</label>
+        <input class="form-control" id="name" maxlength="80" autocomplete="name" required></div>
+      <div class="mb-3"><label class="form-label" for="email">E-Mail</label>
+        <input class="form-control" id="email" type="email" autocomplete="username" required></div>
+      <div class="mb-3"><label class="form-label" for="pw">Passwort (mind. 8 Zeichen)</label>
+        <input class="form-control" id="pw" type="password" minlength="8" autocomplete="new-password" required></div>
+      <div class="mb-3"><label class="form-label" for="pw2">Passwort wiederholen</label>
+        <input class="form-control" id="pw2" type="password" minlength="8" autocomplete="new-password" required></div>
+      <button class="btn btn-primary w-100">Registrieren</button>
+    </form>
+  </div></div>
+  <p class="mt-3 text-center">Schon registriert? <a href="/login">Anmelden</a></p>
+</main>
+<script src="/static/common.js"></script>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('msg');
+  const v = (id) => document.getElementById(id).value;
+  if (v('pw') !== v('pw2')) { msg.innerHTML = '<div class="alert alert-danger">Die Passwörter stimmen nicht überein.</div>'; return; }
+  try {
+    const r = await App.api('POST', '/register', { name: v('name'), email: v('email'), password: v('pw') });
+    document.getElementById('box').innerHTML = r.active
+      ? '<div class="alert alert-success mb-0">Registrierung erfolgreich. Du bist Admin und kannst dich direkt <a href="/login">anmelden</a>.</div>'
+      : '<div class="alert alert-success mb-0">Registrierung erfolgreich. Dein Konto muss jetzt von einem Admin freigeschaltet werden. Danach kannst du dich <a href="/login">anmelden</a>.</div>';
+  } catch (err) {
+    msg.innerHTML = '<div class="alert alert-danger">' + App.esc(err.message) + '</div>';
+  }
+});
+</script>
+</body>
+</html>

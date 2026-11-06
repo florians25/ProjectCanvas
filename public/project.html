@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<title>Projekt - OSP-Projektmanagement</title>
+</head>
+<body>
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2 d-print-none">
+    <h1 class="h4 mb-0 me-2" id="projTitle">Projekt</h1>
+    <span class="badge bg-secondary" id="status">Verbinde ...</span>
+    <span class="small text-muted" id="peers"></span>
+  </div>
+  <ul class="nav nav-tabs d-print-none" id="tabs"></ul>
+  <div class="d-flex flex-wrap gap-2 align-items-center my-3 d-print-none" id="toolbar"></div>
+  <div id="view"><div class="text-muted">Lade ...</div></div>
+</div>
+<script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/ops.js"></script>
+<script src="/static/sync.js"></script>
+<script src="/static/gantt.js"></script>
+<script src="/static/project.js"></script>
+</body>
+</html>

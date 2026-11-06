@@ -1,10 +1,25 @@
-# Project Canvas – interaktiv & gemeinsam
+# OSP-Projektmanagement
 
-Ein interaktives **Project Canvas** (nach der Vorlage mit Zielsetzung, Kriterien, Erfolgskriterien,
-Meilensteinen, Arbeitspaketen, Ergebnis, Team, Stakeholdern, Nutzern, Ressourcen, Projektumfeld und Risiken),
-an dem mehrere Personen **gleichzeitig in Echtzeit** arbeiten können.
+Werkzeug für die Definitions- und Planungsphase des Oberstufenprojekts (OSP). Es enthält genau die
+Planungsdokumente aus dem Kick-off („Planungsdokumente – WuB“). Alle Gruppenmitglieder bearbeiten sie gleichzeitig,
+Änderungen erscheinen sofort bei allen.
 
-**Keine Benutzerkonten:** Jedes Canvas hat eine lange, zufällige ID (256 Bit). Wer den Link kennt, kann mitarbeiten.
+| Bereich | Inhalt |
+|---|---|
+| Project Canvas | Canvas nach Vorlage, live gemeinsam bearbeitbar. Entwicklungsschritte als Versionen speichern und ansehen |
+| Pflichtenheft (vorläufig) | Gliederung nach PH-Vorlage (Kapitel 1–8, Glossar, Bestätigung). Muss-, Wunsch- und Abgrenzungskriterien mit automatischen IDs (//M01, //W01, //A01). Qualitätsanforderungen als Tabelle |
+| Projektstrukturplan | Baum mit numerischer Codierung (1, 1.1, 1.1.1). Teilprojekt, Teilaufgabe, Arbeitspaket. Grafik und Tabelle |
+| Zeitplan (Gantt) | Vorgänge = PSP-Elemente. Start/Ende/Dauer, Vorgänger mit Pfeilen, Sammelvorgänge, Meilensteine. Personen pro Vorgang („Klaus, Lilly“ bzw. „3 Personen“). Wochenenden und Feiertage NRW. Balken verschieben und ziehen |
+| Ressourcen- und Kostenplan | Personen × Stunden je Person × Stundensatz (aus den Arbeitspaketen), Stunden je Person, Sachmittel, Gesamtkosten |
+| Risikoplan / -matrix | Spalten wie Vorlage (Nr., Risiko, Ursache, Schadensausmaß, Eintrittswahrscheinlichkeit, Bewertung, Maßnahme), Risikoarten, Maßnahmenarten, farbige Matrix |
+| Qualitätsplan | Produkt- und Prozessqualität: Maßnahme, Kriterium (WAS), Zielgröße (WIE), Zeitpunkt (WANN), Verantwortlicher (WER) |
+| Arbeitspaketbeschreibung | Formular nach LS6.2, Daten aus PSP/Gantt, mit Unterschriftenfeldern |
+| Fragenkatalog | Phasen Begrüßung bis Verabschiedung |
+| Grobe Zeitplanung | Datum, Was ist zu tun?, Wer hilft mit?, Verantwortlicher?, Was wurde getan? |
+
+Jedes Dokument hat eine **Dokumentansicht**. Von dort lässt es sich **drucken / als PDF speichern** oder
+**als Word-Datei** herunterladen und weiterbearbeiten (Gantt: nur Drucken/PDF). Für Kanban nutzt ihr weiter Trello,
+der Board-Link kann in der Projektübersicht hinterlegt werden.
 
 ## Start mit Docker
 
@@ -12,46 +27,28 @@ an dem mehrere Personen **gleichzeitig in Echtzeit** arbeiten können.
 docker compose up -d --build
 ```
 
-Dann im Browser öffnen: <http://localhost:3000>. Die Daten liegen im Docker-Volume `canvas-data`.
+Dann <http://localhost:3000> öffnen. Die Daten liegen im Docker-Volume `osp-data`.
 
-Ohne Compose:
+## Benutzerkonten
 
-```bash
-docker build -t projectcanvas .
-docker run -d -p 3000:3000 -v canvas-data:/data --name projectcanvas projectcanvas
-```
+1. Jede Person registriert sich unter `/register` (Name, E-Mail, Passwort).
+2. Danach ist das Konto **gesperrt, bis ein Admin es freischaltet** (Menüpunkt „Benutzerverwaltung“, offene Anfragen sind mit einer Zahl markiert).
+3. **Erster Admin:** Die allererste Registrierung wird automatisch Admin. Alternativ in `docker-compose.yml`
+   `ADMIN_EMAIL` setzen, dann wird nur diese E-Mail-Adresse bei der Registrierung Admin.
 
-Ohne Docker (Node ≥ 18): `npm install && npm start`
-
-## So funktioniert's
-
-1. **„Neues Canvas erstellen“** klicken.
-2. Namen eingeben (wird nur im Browser gespeichert, damit andere sehen, wer mitarbeitet).
-3. **„🔗 Einladen“** → Link kopieren, per E-Mail oder Messenger teilen.
-4. Alle mit dem Link sehen Änderungen sofort live.
-
-### Bedienung
-
-- **+** im Feld oder **Doppelklick** auf eine freie Fläche → neue Notiz
-- **Strg/Cmd + Enter** → weitere Notiz darunter, **Backspace** in leerer Notiz → löschen
-- **⠿** ziehen → Notiz verschieben (auch zwischen Feldern, funktioniert mit Touch)
-- **●** → Farbe ändern, **×** → löschen (mit „Rückgängig“)
-- Meilensteine haben ein Datum und werden danach sortiert, Arbeitspakete lassen sich abhaken
-- Farbiger Rahmen mit Namen zeigt, wer gerade welche Notiz bearbeitet
-- **Drucken** → als PDF speichern (A3 quer), **Export/Import** als JSON
+Admins können freischalten, ablehnen, sperren, andere zu Admins machen, Passwörter neu setzen und Projekte löschen.
+Alle freigeschalteten Benutzer sehen und bearbeiten alle Projekte.
 
 ## Konfiguration
 
-| Variable   | Standard | Bedeutung             |
-|------------|----------|-----------------------|
-| `PORT`     | `3000`   | HTTP-Port             |
-| `DATA_DIR` | `/data`  | Speicherort der Canvases (eine JSON-Datei pro Canvas) |
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `PORT` | `3000` | HTTP-Port |
+| `DATA_DIR` | `/data` | Speicherort (Benutzer, Sitzungen, ein JSON pro Projekt) |
+| `ADMIN_EMAIL` | leer | E-Mail, die bei Registrierung Admin wird |
+| `COOKIE_SECURE` | `false` | `true` setzen, wenn über HTTPS betrieben |
 
-## Hinweise zum Betrieb im Internet
+Im Internet hinter einen Reverse-Proxy mit HTTPS stellen. WebSockets laufen über `/ws` und müssen durchgereicht werden,
+z. B. mit Caddy: `osp.example.de { reverse_proxy localhost:3000 }`.
 
-- Hinter einen Reverse-Proxy mit **HTTPS** stellen (z. B. Caddy, Traefik, nginx). WebSockets laufen über `/ws`
-  und müssen durchgereicht werden. Beispiel Caddy: `canvas.example.de { reverse_proxy localhost:3000 }`
-- Der Link ist der Schlüssel: Wer ihn hat, kann bearbeiten. Nur mit dem Team teilen.
-- Backup: einfach das Volume bzw. den Ordner `DATA_DIR` sichern.
-
-Lizenz der Canvas-Vorlage: CC BY-SA (siehe Original „project canvas“).
+**Backup:** das Volume bzw. den Ordner `DATA_DIR` sichern. Einzelne Projekte lassen sich zusätzlich in der Übersicht als JSON herunterladen.

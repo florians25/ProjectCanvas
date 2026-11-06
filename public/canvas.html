@@ -4,36 +4,36 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Project Canvas</title>
+<title>Project Canvas - OSP-Projektmanagement</title>
 <link rel="icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="app">
 <header class="topbar">
-  <a class="brand" href="/" title="Startseite"><img src="/static/favicon.svg" alt="" width="26" height="26"> Project Canvas</a>
-  <div class="status" id="status" title="Verbindungsstatus"><span class="dot"></span><span class="label">Verbinde…</span></div>
+  <a class="brand" href="/" title="Projektübersicht">OSP-Projektmanagement</a>
+  <a class="btn" id="backLink" href="#">Zurück zum Projekt</a>
+  <div class="status" id="status" title="Verbindungsstatus"><span class="dot"></span><span class="label">Verbinde ...</span></div>
   <div class="peers" id="peers"></div>
   <div class="actions">
-    <button class="btn" id="hintsBtn" title="Leitfragen ein-/ausblenden"><span>💡</span><span class="txt">Leitfragen</span></button>
-    <button class="btn" id="exportBtn" title="Als JSON herunterladen"><span>⬇</span><span class="txt">Export</span></button>
-    <button class="btn" id="printBtn" title="Drucken / als PDF speichern"><span>🖨</span><span class="txt">Drucken</span></button>
-    <button class="btn primary" id="inviteBtn"><span>🔗</span><span class="txt">Einladen</span></button>
+    <button class="btn" id="hintsBtn" title="Leitfragen ein-/ausblenden">Leitfragen</button>
+    <button class="btn" id="printBtn" title="Drucken / als PDF speichern">Drucken</button>
   </div>
 </header>
+<div class="version-banner" id="versionBanner" hidden></div>
 
 <main class="sheet" id="sheet">
   <div class="sheet-head">
     <label class="hfield grow">Name des Projektes
-      <input data-field="projectName" maxlength="200" placeholder="Projektname eingeben…"></label>
+      <input data-field="name" maxlength="200" placeholder="Projektname eingeben…"></label>
     <label class="hfield">Projektleiter/in
-      <input data-field="leader" maxlength="200" placeholder="Name"></label>
+      <input data-field="meta.leader" maxlength="200" placeholder="Name"></label>
     <label class="hfield">Produkteigentümer
-      <input data-field="owner" maxlength="200" placeholder="Name"></label>
+      <input data-field="meta.owner" maxlength="200" placeholder="Name"></label>
   </div>
 
   <div class="canvas">
     <section class="box a-ziel" data-section="ziel">
-      <h3><span class="ico">🎯</span> Zielsetzung <small>(SMART+)</small></h3>
+      <h3>Zielsetzung <small>(SMART+)</small></h3>
       <ul class="hints">
         <li>Was ist die Absicht dieses Projektes?</li>
         <li>Warum führen wir dieses Projekt durch?</li>
@@ -45,7 +45,7 @@
     </section>
 
     <section class="box a-kriterien split">
-      <h3><span class="ico">📐</span> Kriterien</h3>
+      <h3>Kriterien</h3>
       <div class="sub" data-section="kriterien_muss">
         <h4>Muss-Kriterien</h4>
         <ul class="hints"><li>Was beinhaltet das Projekt?</li></ul>
@@ -59,7 +59,7 @@
     </section>
 
     <section class="box a-erfolg" data-section="erfolg">
-      <h3><span class="ico">✅</span> Erfolgskriterien</h3>
+      <h3>Erfolgskriterien</h3>
       <ul class="hints">
         <li>Was müssen wir erreichen, damit das Projekt erfolgreich ist?</li>
         <li>Wie können die Erfolgskriterien gemessen werden? (→ Evaluation)</li>
@@ -69,7 +69,7 @@
     </section>
 
     <section class="box a-meilensteine" data-section="meilensteine">
-      <h3><span class="ico">🚩</span> Meilensteine <small>(nach Datum sortiert)</small></h3>
+      <h3>Meilensteine <small>(nach Datum sortiert)</small></h3>
       <ul class="hints">
         <li>Wann starten wir das Projekt und wann ist die endgültige Deadline?</li>
         <li>Was sind die Schlüssel-Meilensteine und wann werden sie auftreten?</li>
@@ -80,7 +80,7 @@
     </section>
 
     <section class="box a-arbeitspakete" data-section="arbeitspakete">
-      <h3><span class="ico">📋</span> Brainstorming für Arbeitspakete / Maßnahmen</h3>
+      <h3>Brainstorming für Arbeitspakete / Maßnahmen</h3>
       <ul class="hints">
         <li>Welche Aktivitäten/Schritte müssen ausgeführt werden, um die einzelnen Meilensteine zu erreichen?</li>
       </ul>
@@ -88,7 +88,7 @@
     </section>
 
     <section class="box a-ergebnis" data-section="ergebnis">
-      <h3><span class="ico">🎁</span> Ergebnis</h3>
+      <h3>Ergebnis</h3>
       <ul class="hints">
         <li>Was ist das Endresultat?</li>
         <li>Ein Buch, ein Produkt, Software, eine Website, eine Veranstaltung …</li>
@@ -97,7 +97,7 @@
     </section>
 
     <section class="box a-team" data-section="team">
-      <h3><span class="ico">👥</span> Team</h3>
+      <h3>Team</h3>
       <ul class="hints">
         <li>Wer sind die Mitglieder?</li>
         <li>Was sind ihre Rollen im Projekt?</li>
@@ -106,7 +106,7 @@
     </section>
 
     <section class="box a-stakeholder" data-section="stakeholder">
-      <h3><span class="ico">🤝</span> Stakeholder / Anspruchsgruppen</h3>
+      <h3>Stakeholder / Anspruchsgruppen</h3>
       <ul class="hints">
         <li>Wer ist am Erfolg des Projektes interessiert?</li>
         <li>Wie sind sie in dem Projekt involviert?</li>
@@ -115,7 +115,7 @@
     </section>
 
     <section class="box a-nutzer" data-section="nutzer">
-      <h3><span class="ico">🙋</span> Nutzer</h3>
+      <h3>Nutzer</h3>
       <ul class="hints">
         <li>Wer wird vom Ergebnis des Projektes profitieren?</li>
       </ul>
@@ -123,7 +123,7 @@
     </section>
 
     <section class="box a-ressourcen" data-section="ressourcen">
-      <h3><span class="ico">🧰</span> Ressourcen</h3>
+      <h3>Ressourcen</h3>
       <ul class="hints">
         <li>Welche Ressourcen brauchen wir für das Projekt? Welche begrenzten Mittel stehen uns zur Verfügung?</li>
         <li>Physisch (Büro, Gebäude, Server) · Finanziell (Geld) · Menschlich (Zeit, Expertenwissen, Fortbildungen)</li>
@@ -132,7 +132,7 @@
     </section>
 
     <section class="box a-umfeld" data-section="umfeld">
-      <h3><span class="ico">🌍</span> Projektumfeld</h3>
+      <h3>Projektumfeld</h3>
       <ul class="hints">
         <li>Welche Rahmenbedingungen beeinflussen unsere Projektdurchführung?</li>
         <li>technisch · organisatorisch · finanziell · menschlich (Zeit, Expertenwissen, Politik)</li>
@@ -141,7 +141,7 @@
     </section>
 
     <section class="box a-risiken" data-section="risiken">
-      <h3><span class="ico">⚡</span> Risiken</h3>
+      <h3>Risiken</h3>
       <ul class="hints">
         <li>Welche Risiken könnten im Verlauf des Projektes auftreten?</li>
         <li>Wie behandeln wir diese Risiken?</li>
@@ -152,35 +152,11 @@
   <footer class="sheet-foot">project canvas</footer>
 </main>
 
-<!-- Einladen -->
-<dialog id="inviteDlg" class="dlg">
-  <form method="dialog">
-    <h2>Team einladen</h2>
-    <p>Teile diesen Link. <b>Jede Person mit dem Link kann das Canvas bearbeiten</b> – keine Anmeldung nötig.</p>
-    <div class="copyrow">
-      <input id="inviteLink" readonly>
-      <button type="button" class="btn primary" id="copyBtn">Kopieren</button>
-    </div>
-    <div class="dlg-actions">
-      <button type="button" class="btn" id="shareBtn" hidden>Teilen…</button>
-      <a class="btn" id="mailBtn">✉ Per E-Mail</a>
-      <button class="btn">Schließen</button>
-    </div>
-  </form>
-</dialog>
-
-<!-- Name -->
-<dialog id="nameDlg" class="dlg">
-  <form method="dialog" id="nameForm">
-    <h2>Wie heißt du?</h2>
-    <p>Damit dein Team sieht, wer gerade mitarbeitet. Wird nur in deinem Browser gespeichert.</p>
-    <input id="nameInput" maxlength="40" placeholder="Dein Name" required autofocus>
-    <div class="dlg-actions"><button class="btn primary">Los geht's</button></div>
-  </form>
-</dialog>
-
 <div class="toast" id="toast"></div>
 
-<script src="/static/app.js"></script>
+<script src="/static/common.js"></script>
+<script src="/static/ops.js"></script>
+<script src="/static/sync.js"></script>
+<script src="/static/canvas.js"></script>
 </body>
 </html>

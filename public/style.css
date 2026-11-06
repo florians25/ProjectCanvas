@@ -295,3 +295,10 @@ body.landing { min-height: 100vh; display: grid; place-items: center; padding: 2
   }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Projekt-Integration */
+.version-banner { background: #fff3cd; color: #664d03; padding: 8px 16px; border-bottom: 1px solid #ffe69c; font-size: 13px; }
+.version-banner a { color: inherit; font-weight: 600; }
+.read-only .add-btn, .read-only .note-bar .icon-btn, .read-only .grip { display: none !important; }
+.read-only .empty > .notes::after { content: ""; }
+.topbar .btn { font-size: 13px; }

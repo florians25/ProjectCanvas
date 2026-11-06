@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<title>Benutzerverwaltung - OSP-Projektmanagement</title>
+</head>
+<body>
+<main class="container py-4">
+  <h1 class="h4 mb-3">Benutzerverwaltung</h1>
+  <div id="msg"></div>
+  <h2 class="h6">Warten auf Freischaltung</h2>
+  <div class="table-responsive"><table class="table table-sm align-middle">
+    <thead class="table-light"><tr><th>Name</th><th>E-Mail</th><th>Registriert am</th><th></th></tr></thead>
+    <tbody id="pending"></tbody>
+  </table></div>
+  <h2 class="h6 mt-4">Alle Benutzer</h2>
+  <div class="table-responsive"><table class="table table-sm align-middle">
+    <thead class="table-light"><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th></th></tr></thead>
+    <tbody id="all"></tbody>
+  </table></div>
+</main>
+<script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  const me = await App.navbar('admin');
+  const STATUS = { pending: '<span class="badge bg-warning text-dark">wartet</span>', active: '<span class="badge bg-success">aktiv</span>', blocked: '<span class="badge bg-secondary">gesperrt</span>' };
+  const msg = (cls, t) => { document.getElementById('msg').innerHTML = t ? '<div class="alert alert-' + cls + '">' + App.esc(t) + '</div>' : ''; };
+  async function act(u, action, extra) {
+    try { await App.api('POST', '/admin/users/' + encodeURIComponent(u.id), Object.assign({ action }, extra)); msg(); load(); }
+    catch (err) { msg('danger', err.message); }
+  }
+  function btn(label, cls, fn) {
+    const b = document.createElement('button');
+    b.className = 'btn btn-sm ' + cls + ' me-1 mb-1';
+    b.textContent = label;
+    b.onclick = fn;
+    return b;
+  }
+  async function load() {
+    const users = await App.api('GET', '/admin/users');
+    const pending = document.getElementById('pending');
+    const all = document.getElementById('all');
+    pending.innerHTML = ''; all.innerHTML = '';
+    const p = users.filter((u) => u.status === 'pending');
+    if (!p.length) pending.innerHTML = '<tr><td colspan="4" class="text-muted">Keine offenen Registrierungen.</td></tr>';
+    for (const u of p) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + App.esc(u.name) + '</td><td>' + App.esc(u.email) + '</td><td>' + new Date(u.createdAt).toLocaleString('de-DE') + '</td><td class="text-end"></td>';
+      tr.lastChild.append(btn('Freischalten', 'btn-success', () => act(u, 'approve')),
+        btn('Ablehnen (löschen)', 'btn-outline-danger', () => confirm('Registrierung von ' + u.name + ' löschen?') && act(u, 'delete')));
+      pending.appendChild(tr);
+    }
+    for (const u of users) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + App.esc(u.name) + (u.id === me.id ? ' <span class="text-muted">(du)</span>' : '') + '</td><td>' + App.esc(u.email) + '</td><td>'
+        + STATUS[u.status] + '</td><td>' + (u.role === 'admin' ? 'Admin' : 'Benutzer') + '</td><td class="text-end"></td>';
+      const td = tr.lastChild;
+      if (u.status !== 'active') td.append(btn('Freischalten', 'btn-success', () => act(u, 'approve')));
+      if (u.id !== me.id) {
+        if (u.status === 'active') td.append(btn('Sperren', 'btn-outline-secondary', () => act(u, 'block')));
+        td.append(u.role === 'admin'
+          ? btn('Admin entziehen', 'btn-outline-secondary', () => act(u, 'removeAdmin'))
+          : btn('Zum Admin machen', 'btn-outline-secondary', () => act(u, 'makeAdmin')));
+      }
+      td.append(btn('Passwort setzen', 'btn-outline-secondary', () => {
+        const pw = prompt('Neues Passwort für ' + u.name + ' (mind. 8 Zeichen):');
+        if (pw) act(u, 'resetPassword', { password: pw });
+      }));
+      if (u.id !== me.id) td.append(btn('Löschen', 'btn-outline-danger', () => confirm(u.name + ' wirklich löschen?') && act(u, 'delete')));
+      all.appendChild(tr);
+    }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

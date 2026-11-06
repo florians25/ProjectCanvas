@@ -1,12 +1,17 @@
 services:
-  projectcanvas:
+  osp:
     build: .
-    container_name: projectcanvas
+    container_name: osp-projektmanagement
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      # E-Mail, die bei der Registrierung automatisch Admin wird (leer = erste Registrierung wird Admin)
+      ADMIN_EMAIL: ""
+      # auf "true" setzen, wenn die Seite über HTTPS (Reverse-Proxy) läuft
+      COOKIE_SECURE: "false"
     volumes:
-      - canvas-data:/data
+      - osp-data:/data
 
 volumes:
-  canvas-data:
+  osp-data:

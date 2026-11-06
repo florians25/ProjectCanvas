@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<title>Mein Konto - OSP-Projektmanagement</title>
+</head>
+<body>
+<main class="container py-4" style="max-width:560px">
+  <h1 class="h4 mb-3">Mein Konto</h1>
+  <div id="msg"></div>
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h6">Name</h2>
+    <form id="nameForm" class="input-group">
+      <input class="form-control" id="name" maxlength="80" required>
+      <button class="btn btn-primary">Speichern</button>
+    </form>
+    <div class="form-text" id="emailInfo"></div>
+  </div></div>
+  <div class="card"><div class="card-body">
+    <h2 class="h6">Passwort ändern</h2>
+    <form id="pwForm">
+      <input class="form-control mb-2" id="pwOld" type="password" placeholder="Aktuelles Passwort" autocomplete="current-password" required>
+      <input class="form-control mb-2" id="pwNew" type="password" minlength="8" placeholder="Neues Passwort (mind. 8 Zeichen)" autocomplete="new-password" required>
+      <button class="btn btn-primary">Passwort ändern</button>
+    </form>
+  </div></div>
+</main>
+<script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="/static/common.js"></script>
+<script>
+(async () => {
+  const me = await App.navbar('account');
+  const msg = (cls, t) => { document.getElementById('msg').innerHTML = '<div class="alert alert-' + cls + '">' + App.esc(t) + '</div>'; };
+  document.getElementById('name').value = me.name;
+  document.getElementById('emailInfo').textContent = 'E-Mail: ' + me.email + (me.role === 'admin' ? ' (Admin)' : '');
+  document.getElementById('nameForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await App.api('POST', '/me', { name: document.getElementById('name').value }); msg('success', 'Name gespeichert.'); }
+    catch (err) { msg('danger', err.message); }
+  });
+  document.getElementById('pwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await App.api('POST', '/me', { password: document.getElementById('pwOld').value, newPassword: document.getElementById('pwNew').value });
+      msg('success', 'Passwort geändert.'); e.target.reset();
+    } catch (err) { msg('danger', err.message); }
+  });
+})();
+</script>
+</body>
+</html>

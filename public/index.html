@@ -3,66 +3,78 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Canvas</title>
 <link rel="icon" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="/static/app.css">
+<title>Projekte - OSP-Projektmanagement</title>
 </head>
-<body class="landing">
-  <main class="landing-card">
-    <img src="/static/favicon.svg" alt="" width="56" height="56">
-    <h1>Project Canvas</h1>
-    <p class="lead">Projekte gemeinsam planen – in Echtzeit, ohne Anmeldung.<br>
-      Canvas erstellen, Link teilen, loslegen.</p>
-    <form method="post" action="/new">
-      <button class="btn primary big" type="submit">+ Neues Canvas erstellen</button>
-    </form>
-    <label class="btn ghost" id="importLabel">
-      JSON importieren
-      <input type="file" id="importFile" accept="application/json,.json" hidden>
-    </label>
-
-    <section id="recentWrap" hidden>
-      <h2>Zuletzt geöffnet <small>(nur in diesem Browser)</small></h2>
-      <ul id="recent"></ul>
-    </section>
-
-    <p class="hint">🔒 Jeder, der den Link kennt, kann das Canvas bearbeiten. Die ID ist lang und zufällig –
-      teile den Link nur mit deinem Team.</p>
-  </main>
+<body>
+<main class="container py-4">
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <h1 class="h4">Projekte</h1>
+      <form class="input-group mb-3" id="newForm">
+        <input class="form-control" id="newName" placeholder="Name des neuen Projekts" maxlength="200" required>
+        <button class="btn btn-primary">Projekt anlegen</button>
+      </form>
+      <div class="list-group" id="list"></div>
+    </div>
+    <div class="col-lg-5">
+      <h2 class="h5">Ablauf OSP 2026/27 (laut Kick-off)</h2>
+      <table class="table table-sm table-bordered">
+        <thead class="table-light"><tr><th>Datum/Woche</th><th>Was?</th><th>Wo?</th></tr></thead>
+        <tbody>
+          <tr><td>02.11.26 - 06.11.26</td><td>Kick-Off</td><td>WuB</td></tr>
+          <tr><td>Woche nach Kick-Off</td><td>Erste Canvas Version</td><td>WuB</td></tr>
+          <tr><td>02.11. - 06.11.26</td><td>Erstellung Fragenkatalog für Kundengespräche</td><td>DEU</td></tr>
+          <tr><td>09.11. - 13.11.26</td><td>Durchführung Kundengespräche</td><td>FU</td></tr>
+          <tr><td>Woche nach Kundengespräch</td><td>1. Version Pflichtenheft (1.0)</td><td>WuB/FU</td></tr>
+          <tr><td>spät. 22.12.26</td><td>Abgabe Planungsdokumente</td><td>WuB</td></tr>
+          <tr><td>07.01. - 15.01.27</td><td>Feedback</td><td>WuB, FU</td></tr>
+          <tr><td>ab 25.01.27</td><td>Start Realisierungsphase</td><td>FU</td></tr>
+        </tbody>
+      </table>
+      <h2 class="h6">Planungsdokumente (WuB)</h2>
+      <p class="small mb-1">Gruppenleistung: Project Canvas (Entwicklungsschritte), Pflichtenheft (vorläufig), Projektstrukturplan,
+        Zeitplan (Gantt-Diagramm), Ressourcen- und Kostenplan, Risikoplan/-matrix, Qualitätsplan</p>
+      <p class="small">Individualleistung: Arbeitspaketbeschreibung</p>
+    </div>
+  </div>
+</main>
+<script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="/static/common.js"></script>
 <script>
-(function () {
-  let list = [];
-  try { list = JSON.parse(localStorage.getItem('pc.recent') || '[]'); } catch {}
-  const ul = document.getElementById('recent');
-  if (list.length) {
-    document.getElementById('recentWrap').hidden = false;
-    for (const r of list) {
-      const li = document.createElement('li');
-      const a = document.createElement('a');
-      a.href = '/c/' + encodeURIComponent(r.id);
-      a.textContent = r.name || 'Unbenanntes Projekt';
-      const s = document.createElement('small');
-      s.textContent = new Date(r.at).toLocaleString('de-DE');
-      const x = document.createElement('button');
-      x.className = 'icon-btn'; x.title = 'Aus Liste entfernen'; x.textContent = '×';
-      x.onclick = () => {
-        list = list.filter((e) => e.id !== r.id);
-        try { localStorage.setItem('pc.recent', JSON.stringify(list)); } catch {}
-        li.remove();
-        if (!list.length) document.getElementById('recentWrap').hidden = true;
-      };
-      li.append(a, s, x);
-      ul.append(li);
+(async () => {
+  const me = await App.navbar('projects');
+  async function load() {
+    const list = await App.api('GET', '/projects');
+    const box = document.getElementById('list');
+    box.innerHTML = list.length ? '' : '<div class="text-muted">Noch keine Projekte vorhanden.</div>';
+    for (const p of list) {
+      const row = document.createElement('div');
+      row.className = 'list-group-item d-flex align-items-center gap-2';
+      row.innerHTML = '<a class="flex-grow-1 text-decoration-none" href="/p/' + encodeURIComponent(p.id) + '">' + App.esc(p.name) + '</a>'
+        + '<small class="text-muted">geändert ' + new Date(p.updatedAt).toLocaleString('de-DE') + '</small>';
+      if (me.role === 'admin') {
+        const del = document.createElement('button');
+        del.className = 'btn btn-sm btn-outline-danger';
+        del.textContent = 'Löschen';
+        del.onclick = async () => {
+          if (!confirm('Projekt "' + p.name + '" wirklich löschen?')) return;
+          await App.api('DELETE', '/projects/' + encodeURIComponent(p.id));
+          load();
+        };
+        row.appendChild(del);
+      }
+      box.appendChild(row);
     }
   }
-  document.getElementById('importFile').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const res = await fetch('/api/import', { method: 'POST', body: await f.text() });
-    if (!res.ok) return alert('Import fehlgeschlagen: ' + await res.text());
-    const { id } = await res.json();
-    location.href = '/c/' + id;
+  document.getElementById('newForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = await App.api('POST', '/projects', { name: document.getElementById('newName').value });
+    location.href = '/p/' + encodeURIComponent(r.id);
   });
+  load();
 })();
 </script>
 </body>

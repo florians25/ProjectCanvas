@@ -1,7 +1,7 @@
 {
-  "name": "projectcanvas",
+  "name": "osp-projektmanagement",
   "version": "1.0.0",
-  "description": "Interaktives Project Canvas mit Echtzeit-Zusammenarbeit",
+  "description": "OSP-Projektmanagement: Project Canvas, Pflichtenheft, PSP, Gantt, Kosten, Risiken, Qualität",
   "main": "server.js",
   "private": true,
   "scripts": {
@@ -11,6 +11,8 @@
     "node": ">=18"
   },
   "dependencies": {
+    "bootstrap": "5.3",
+    "express": "^4.22.3",
     "ws": "^8.18.0"
   }
 }
