@@ -28,25 +28,33 @@
   const fmtNum = (n) => (Number.isFinite(n) ? n.toLocaleString('de-DE', { maximumFractionDigits: 2 }) : '');
 
   /** Navigationsleiste oben */
-  async function navbar(active, extraHtml) {
+  async function navbar(active) {
     const me = await api('GET', '/me');
     const nav = document.createElement('nav');
-    nav.className = 'navbar navbar-expand-md navbar-dark bg-dark d-print-none';
+    nav.className = 'navbar navbar-expand-md bg-dark border-bottom border-secondary-subtle d-print-none';
+    nav.setAttribute('data-bs-theme', 'dark');
+    const link = (href, key, label) => `<li class="nav-item"><a class="nav-link ${active === key ? 'active' : ''}" href="${href}">${label}</a></li>`;
     nav.innerHTML = `
       <div class="container-fluid">
-        <a class="navbar-brand" href="/">OSP-Projektmanagement</a>
+        <a class="navbar-brand fw-semibold" href="/"><img src="/static/favicon.svg" width="22" height="22" class="me-2 align-text-bottom" alt="">OSP-Projektmanagement</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"><span class="navbar-toggler-icon"></span></button>
         <div class="collapse navbar-collapse" id="mainNav">
           <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link ${active === 'projects' ? 'active' : ''}" href="/">Projekte</a></li>
-            ${me.role === 'admin' ? `<li class="nav-item"><a class="nav-link ${active === 'admin' ? 'active' : ''}" href="/admin">Benutzerverwaltung
-              ${me.pending ? `<span class="badge bg-warning text-dark">${me.pending}</span>` : ''}</a></li>` : ''}
+            ${me.mustChange ? '' : link('/', 'projects', 'Projekte')}
+            ${me.role === 'admin' && !me.mustChange ? link('/admin', 'admin', `Benutzerverwaltung${me.pending ? ` <span class="badge bg-warning text-dark">${me.pending}</span>` : ''}`) : ''}
           </ul>
-          ${extraHtml || ''}
-          <ul class="navbar-nav">
-            <li class="nav-item"><a class="nav-link ${active === 'account' ? 'active' : ''}" href="/konto">${esc(me.name)}</a></li>
-            <li class="nav-item"><a class="nav-link" href="#" id="logoutLink">Abmelden</a></li>
-          </ul>
+          <div class="d-flex align-items-center gap-2">
+            ${window.Theme ? window.Theme.menuHtml() : ''}
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" type="button">${esc(me.name)}</button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><h6 class="dropdown-header">${esc(me.email)}${me.role === 'admin' ? ' (Admin)' : ''}</h6></li>
+                <li><a class="dropdown-item ${active === 'account' ? 'active' : ''}" href="/konto">Mein Konto</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" id="logoutLink">Abmelden</a></li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>`;
     document.body.prepend(nav);

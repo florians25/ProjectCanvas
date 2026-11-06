@@ -20,6 +20,62 @@
   const uid = App.uid;
   const D = () => viewDoc || (S && S.doc);
 
+  const lastTyped = {};
+  const SEC_LABEL = { ziel: 'Zielsetzung', kriterien_muss: 'Muss-Kriterien', kriterien_nicht: 'Abgrenzungskriterien', erfolg: 'Erfolgskriterien',
+    meilensteine: 'Meilensteine', arbeitspakete: 'Arbeitspakete', ergebnis: 'Ergebnis', team: 'Team', stakeholder: 'Stakeholder', nutzer: 'Nutzer',
+    ressourcen: 'Ressourcen', umfeld: 'Projektumfeld', risiken: 'Risiken' };
+  function rel(t) {
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 60) return 'gerade';
+    if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+    if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
+    return new Date(t).toLocaleDateString('de-DE');
+  }
+  function colorOfName(name) {
+    const p = S && S.peers.find((x) => x.name === name);
+    return p ? peerColor(p.userId) : '#3b82f6';
+  }
+
+  // ---------- Mauszeiger der anderen ----------
+  const cursors = new Map(); // peerId -> { el, t }
+  function onCursor(msg) {
+    if (readOnly) return;
+    const grid = $('.canvas');
+    let c = cursors.get(msg.id);
+    if (msg.x === null) { if (c) { c.el.remove(); cursors.delete(msg.id); } return; }
+    if (!c) {
+      const el = document.createElement('div');
+      el.className = 'cursor';
+      const col = peerColor(msg.userId);
+      el.innerHTML = `<svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1 L1 16 L5 12 L8 19 L11 18 L8 11 L14 11 Z" fill="${col}" stroke="#fff" stroke-width="1.2"/></svg><span class="cname" style="background:${col}"></span>`;
+      $('.cname', el).textContent = msg.name;
+      grid.appendChild(el);
+      c = { el, t: 0 };
+      cursors.set(msg.id, c);
+    }
+    c.el.style.left = (msg.x * grid.clientWidth) + 'px';
+    c.el.style.top = (msg.y * grid.clientHeight) + 'px';
+    c.t = Date.now();
+  }
+  setInterval(() => {
+    const ids = new Set((S ? S.peers : []).map((p) => p.id));
+    for (const [id, c] of cursors) if (!ids.has(id) || Date.now() - c.t > 15000) { c.el.remove(); cursors.delete(id); }
+    // Zeitangaben in den Notizen aktualisieren
+    if (S && S.doc) for (const n of Object.values(D().notes)) { const el = noteEls.get(n.id); if (el && n.editedAt) { const m = $('.note-meta', el); if (m) m.textContent = [n.author, n.editedBy && n.editedBy !== n.author ? 'zuletzt ' + n.editedBy : '', rel(n.editedAt)].filter(Boolean).join(' · '); } }
+  }, 5000);
+  function setupCursorSending() {
+    const grid = $('.canvas');
+    let last = 0, pending = null, tmr = null;
+    const send = () => { tmr = null; last = Date.now(); if (pending) S.send(Object.assign({ type: 'cursor' }, pending)); };
+    grid.addEventListener('pointermove', (e) => {
+      if (readOnly || !S) return;
+      const r = grid.getBoundingClientRect();
+      pending = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+      if (Date.now() - last > 50) send(); else if (!tmr) tmr = setTimeout(send, 50);
+    });
+    grid.addEventListener('pointerleave', () => { pending = null; if (S) S.send({ type: 'cursor', x: null, y: null }); });
+  }
+
   function setStatus(state, label) {
     const s = $('#status');
     s.dataset.state = state;
@@ -140,7 +196,8 @@
         <button class="icon-btn color-btn" title="Farbe">●</button>
         <button class="icon-btn del-btn" title="Löschen">×</button>
       </div>
-      <textarea rows="1" maxlength="4000" placeholder="Notiz…"></textarea>`;
+      <textarea rows="1" maxlength="4000" placeholder="Notiz…"></textarea>
+      <div class="note-meta"></div>`;
     const ta = $('textarea', el);
     let timer = null;
     const sendText = () => {
@@ -151,9 +208,14 @@
     ta.addEventListener('input', () => {
       autosize(ta);
       clearTimeout(timer);
-      timer = setTimeout(sendText, 250);
+      lastTyped[n.id] = Date.now();
+      timer = setTimeout(sendText, 40);
     });
-    ta.addEventListener('focus', () => S.presence(n.id));
+    ta.addEventListener('focus', () => {
+      S.presence(n.id);
+      const others = S.peers.filter((p) => p.id !== S.me && p.focus === n.id).map((p) => p.name);
+      if (others.length) toast(`${[...new Set(others)].join(', ')} bearbeitet diese Notiz gerade. Änderungen werden live übernommen.`);
+    });
     ta.addEventListener('blur', () => { sendText(); S.presence(null); });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') ta.blur();
@@ -184,10 +246,30 @@
     el.className = `note c-${n.color}${n.done ? ' is-done' : ''}`;
     el.dataset.sec = n.section;
     const ta = $('textarea', el);
-    if (ta.value !== n.text && (document.activeElement !== ta || !remote)) {
+    const focused = document.activeElement === ta;
+    if (ta.value !== n.text && (!focused || !remote)) {
       ta.value = n.text;
       autosize(ta);
+    } else if (ta.value !== n.text && focused && remote && Date.now() - (lastTyped[n.id] || 0) > 1500) {
+      // jemand anderes hat geändert, während man nur in der Notiz steht: übernehmen, Cursor ungefähr halten
+      const pos = ta.selectionStart, old = ta.value;
+      ta.value = n.text;
+      const shift = n.text.length - old.length;
+      const p2 = old.slice(0, pos) === n.text.slice(0, pos) ? pos : Math.max(0, pos + shift);
+      ta.setSelectionRange(p2, p2);
+      autosize(ta);
     }
+    const meta = $('.note-meta', el);
+    const who = n.author || '';
+    const last = n.editedBy && n.editedBy !== n.author ? `zuletzt ${n.editedBy}` : '';
+    meta.textContent = [who, last, n.editedAt ? rel(n.editedAt) : ''].filter(Boolean).join(' · ');
+    meta.title = `Erstellt von ${n.author || '?'}${n.editedBy ? `, zuletzt bearbeitet von ${n.editedBy}` : ''}${n.editedAt ? ' am ' + new Date(n.editedAt).toLocaleString('de-DE') : ''}`;
+    if (remote && el.isConnected && el.dataset.seen && el.dataset.seenText !== n.text + n.section + n.color) {
+      el.style.setProperty('--flash', n.editedBy ? colorOfName(n.editedBy) : '#3b82f6');
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    }
+    el.dataset.seen = '1';
+    el.dataset.seenText = n.text + n.section + n.color;
     $('.done', el).checked = !!n.done;
     const d = $('.date', el);
     if (document.activeElement !== d) d.value = n.date || '';
@@ -200,6 +282,27 @@
   }
 
   function renderFocus() {
+    // Kürzel der Personen an den Feldern, in denen sie gerade arbeiten
+    const bySec = {};
+    for (const p of S.peers) {
+      if (p.id === S.me || !p.focus) continue;
+      const n = D().notes[p.focus];
+      if (n) (bySec[n.section] = bySec[n.section] || new Map()).set(p.userId, p);
+    }
+    for (const sec of $$('[data-section]')) {
+      const head = $(':scope > h3, :scope > h4', sec);
+      let box = $('.sec-peers', head);
+      if (!box) { box = document.createElement('span'); box.className = 'sec-peers'; head.insertBefore(box, $('.add-btn', head)); }
+      const ps = bySec[sec.dataset.section] ? [...bySec[sec.dataset.section].values()] : [];
+      box.innerHTML = '';
+      for (const p of ps) {
+        const sp = document.createElement('span');
+        sp.style.background = peerColor(p.userId);
+        sp.textContent = initials(p.name);
+        sp.title = p.name + ' arbeitet hier';
+        box.appendChild(sp);
+      }
+    }
     for (const el of noteEls.values()) {
       el.style.removeProperty('--peer');
       el.classList.remove('peer-editing');
@@ -233,7 +336,8 @@
       a.className = 'avatar' + (p.id === S.me ? ' me' : '');
       a.style.background = peerColor(p.userId);
       a.textContent = initials(p.name);
-      a.title = p.id === S.me ? p.name + ' (du)' : p.name;
+      const fn = p.focus && D().notes[p.focus] ? SEC_LABEL[D().notes[p.focus].section] : '';
+      a.title = (p.id === S.me ? p.name + ' (du)' : p.name) + (fn ? ' - arbeitet in: ' + fn : '');
       box.appendChild(a);
     }
   }
@@ -451,6 +555,11 @@
       store.set('pc.hideHints', h);
     });
     $('#printBtn').addEventListener('click', () => window.print());
+    const tb = $('#themeBtn');
+    const lab = { light: 'Hell', dark: 'Dunkel', auto: 'System' };
+    const upd = () => { tb.textContent = 'Darstellung: ' + lab[Theme.get()]; };
+    upd();
+    tb.addEventListener('click', () => { const order = ['light', 'dark', 'auto']; Theme.set(order[(order.indexOf(Theme.get()) + 1) % 3]); upd(); });
     window.addEventListener('beforeprint', () => $$('.note textarea').forEach(autosize));
     $('#backLink').href = '/p/' + encodeURIComponent(pid) + '#canvas';
   }
@@ -478,7 +587,9 @@
     setupSections();
     setupFields();
     setupToolbar();
+    setupCursorSending();
     S = Sync.connect(pid, {
+      onCursor,
       onInit: () => {
         if (versionId) enterVersion();
         renderAll();
@@ -489,6 +600,6 @@
       onPeers: () => { renderPeers(); renderFocus(); },
       onStatus: (state, text) => setStatus(state, text),
       onGone: () => { alert('Dieses Projekt wurde gelöscht.'); location.href = '/'; },
-    });
+    }, { delay: 60 });
   })();
 })();

@@ -6,8 +6,9 @@
    * Sync.connect(projectId, handlers)
    * handlers: onInit(doc), onOps(ops), onPeers(peers), onStatus(state, text), onSnapshot(), onGone()
    */
-  function connect(projectId, h) {
-    const self = { doc: null, me: null, user: null, peers: [] };
+  function connect(projectId, h, options) {
+    const delay = (options && options.delay) || 300;
+    const self = { doc: null, me: null, user: null, peers: [], activity: [] };
     let ws = null;
     let retry = 0;
     let unsent = [];        // noch nicht gesendet (Text wird kurz gesammelt)
@@ -28,6 +29,7 @@
           self.me = msg.you;
           self.user = msg.user;
           self.peers = msg.peers;
+          self.activity = msg.activity || [];
           // Änderungen, die während einer Unterbrechung gemacht wurden, erneut anwenden
           const replay = sentUnconfirmed.concat(unsent);
           sentUnconfirmed = []; unsent = [];
@@ -41,6 +43,16 @@
         } else if (msg.type === 'peers') {
           self.peers = msg.peers;
           h.onPeers && h.onPeers(self.peers);
+        } else if (msg.type === 'activity') {
+          const i = self.activity.findIndex((a) => a.id === msg.entry.id);
+          if (i >= 0) self.activity.splice(i, 1);
+          self.activity.unshift(msg.entry);
+          h.onActivity && h.onActivity(msg.entry);
+        } else if (msg.type === 'cursor') {
+          h.onCursor && h.onCursor(msg);
+        } else if (msg.type === 'baseline') {
+          self.doc.baseline = msg.baseline;
+          h.onOps && h.onOps([]);
         } else if (msg.type === 'snapshot') {
           self.doc.canvasVersions.push(msg.snap);
           h.onSnapshot && h.onSnapshot();
@@ -86,7 +98,7 @@
       } else {
         unsent.push(op);
       }
-      if (op.t === 'upd' || op.t === 'set') { if (!timer) timer = setTimeout(flush, 300); } else flush();
+      if (op.t === 'upd' || op.t === 'set') { if (!timer) timer = setTimeout(flush, delay); } else flush();
       return true;
     };
     self.flush = flush;

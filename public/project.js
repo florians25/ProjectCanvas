@@ -12,18 +12,22 @@
   let mode = 'edit';     // edit | doc
   let apSelected = null; // gewähltes Arbeitspaket (Arbeitspaketbeschreibung)
 
+  // [Schlüssel, Titel, Gruppe, Beschreibung]
   const TABS = [
-    ['uebersicht', 'Übersicht'],
-    ['canvas', 'Project Canvas'],
-    ['pflichtenheft', 'Pflichtenheft'],
-    ['psp', 'Projektstrukturplan'],
-    ['gantt', 'Zeitplan (Gantt)'],
-    ['kosten', 'Ressourcen- und Kostenplan'],
-    ['risiken', 'Risikoplan'],
-    ['qualitaet', 'Qualitätsplan'],
-    ['ap', 'Arbeitspaketbeschreibung'],
-    ['fragen', 'Fragenkatalog'],
-    ['doku', 'Grobe Zeitplanung'],
+    ['uebersicht', 'Übersicht', 'Projekt', 'Stand aller Planungsdokumente, offene Punkte und nächste Termine.'],
+    ['projekt', 'Projektdaten', 'Projekt', 'Stammdaten des Projekts. Sie werden in allen Dokumenten verwendet.'],
+    ['aktivitaet', 'Aktivitäten', 'Projekt', 'Wer hat wann woran gearbeitet? Nachweis für Sonstige Leistung / Engagement.'],
+    ['canvas', 'Project Canvas', 'Definition', 'Gemeinsames Canvas. Entwicklungsschritte als Versionen festhalten.'],
+    ['fragen', 'Fragenkatalog', 'Definition', 'Fragen für das Kundengespräch, nach Gesprächsphasen gegliedert.'],
+    ['pflichtenheft', 'Pflichtenheft', 'Definition', 'Vorläufiges Pflichtenheft nach Vorlage, mit codierten Kriterien.'],
+    ['psp', 'Projektstrukturplan', 'Planung', 'Gliederung in Teilprojekte, Teilaufgaben und Arbeitspakete mit Codierung.'],
+    ['gantt', 'Zeitplan (Gantt)', 'Planung', 'Termine, Dauer, Abhängigkeiten und Personen je Vorgang.'],
+    ['kosten', 'Ressourcen- und Kostenplan', 'Planung', 'Personalkosten aus den Arbeitspaketen, Stunden je Person und Sachmittel.'],
+    ['risiken', 'Risikoplan', 'Planung', 'Risiken identifizieren, bewerten und Maßnahmen ableiten.'],
+    ['qualitaet', 'Qualitätsplan', 'Planung', 'Was, wie, wann und von wem wird die Qualität gesichert?'],
+    ['ap', 'Arbeitspaketbeschreibung', 'Individualleistung', 'Beschreibung eines Arbeitspakets nach Vorlage LS6.2.'],
+    ['doku', 'Grobe Zeitplanung', 'Dokumentation', 'Laufende Dokumentation: was ist zu tun, wer hilft, was wurde getan.'],
+    ['gesamt', 'Gesamtdokument', 'Dokumentation', 'Alle Planungsdokumente zusammen für die Abgabe drucken oder als Word-Datei.'],
   ];
   const tab = () => {
     const t = location.hash.slice(1);
@@ -79,7 +83,7 @@
   function tableEditor(c, cols, filter, filterKey) {
     const list = rows(c, filter);
     return `<div class="table-responsive"><table class="table table-sm table-bordered table-edit">
-      <thead class="table-light"><tr>${cols.map((col) => `<th style="${col.w ? 'width:' + col.w : ''}">${esc(col.label)}</th>`).join('')}<th style="width:1%"></th></tr></thead>
+      <thead><tr>${cols.map((col) => `<th style="${col.w ? 'width:' + col.w : ''}">${esc(col.label)}</th>`).join('')}<th style="width:1%"></th></tr></thead>
       <tbody>${list.length ? list.map((r, i) => `<tr>${cols.map((col) => {
         if (col.render) return `<td class="${col.cls || ''}">${col.render(r, i)}</td>`;
         const b = `upd|${c}|${r.id}|${col.k}`;
@@ -111,11 +115,22 @@
   function autosize(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
 
   // ---------- Rendering ----------
-  function renderTabs() {
-    $('#tabs').innerHTML = TABS.map(([k, l]) => `<li class="nav-item"><a class="nav-link ${tab() === k ? 'active' : ''}" href="#${k}">${esc(l)}</a></li>`).join('');
+  function renderSidebar() {
+    const prog = progressAll();
+    let html = '', group = '';
+    for (const [k, l, g] of TABS) {
+      if (g !== group) { html += `${group ? '</div>' : ''}<div class="nav-group"><div class="nav-group-title">${esc(g)}</div>`; group = g; }
+      const p = prog[k];
+      html += `<a class="side-link ${tab() === k ? 'active' : ''}" href="#${k}"><span class="text-truncate">${esc(l)}</span>${p ? `<span class="side-pct ${p.pct === 100 ? 'done' : ''}">${p.pct}%</span>` : ''}</a>`;
+    }
+    const tr = doc().meta.trello;
+    $('#sideNav').innerHTML = html + '</div>' + (tr && /^https?:\/\//.test(tr)
+      ? `<a class="btn btn-sm btn-outline-primary side-trello" href="${esc(tr)}" target="_blank" rel="noopener">Trello-Board öffnen</a>`
+      : `<a class="small text-body-secondary side-trello" href="#projekt">Trello-Link hinterlegen</a>`);
+    $('#sideNav').classList.remove('show');
   }
 
-  const DOC_TABS = ['pflichtenheft', 'psp', 'gantt', 'kosten', 'risiken', 'qualitaet', 'ap', 'fragen', 'doku'];
+  const DOC_TABS = ['pflichtenheft', 'psp', 'gantt', 'kosten', 'risiken', 'qualitaet', 'ap', 'fragen', 'doku', 'aktivitaet', 'gesamt'];
 
   function renderToolbar() {
     const t = tab();
@@ -127,7 +142,7 @@
         <button class="btn ${mode === 'doc' ? 'btn-primary' : 'btn-outline-primary'}" data-act="mode" data-m="doc">Dokumentansicht</button>
       </div>
       <button class="btn btn-sm btn-outline-secondary" data-act="print">Drucken / PDF</button>
-      ${t !== 'gantt' ? '<button class="btn btn-sm btn-outline-secondary" data-act="word">Als Word-Datei</button>' : ''}`;
+      ${t !== 'gantt' ? '<button class="btn btn-sm btn-outline-secondary" data-act="word">Word-Datei</button>' : ''}`;
   }
 
   let dragging = false;
@@ -144,12 +159,15 @@
 
     $('#projTitle').textContent = doc().name || 'Projekt';
     document.title = (doc().name || 'Projekt') + ' - OSP-Projektmanagement';
-    renderTabs();
-    renderToolbar();
     const t = tab();
+    const info = TABS.find((x) => x[0] === t);
+    $('#pageTitle').textContent = info[1];
+    $('#pageDesc').textContent = info[3];
+    renderSidebar();
+    renderToolbar();
     const V = VIEWS[t];
-    if (mode === 'doc' && V.doc) view.innerHTML = `<div class="doc">${V.doc()}</div>`;
-    else view.innerHTML = V.edit();
+    if (mode === 'doc' && V.doc) view.innerHTML = `<div class="doc-paper"><div class="doc">${V.doc()}${kiNote(t)}</div></div>`;
+    else view.innerHTML = V.edit() + kiCard(t) + checkCard(t);
     if (V.after) V.after(view);
     autosizeAll(view);
 
@@ -168,37 +186,357 @@
   // ---------- Ansichten ----------
   const VIEWS = {};
 
-  // ---- Übersicht ----
+  // ---------- Stand der Dokumente (Prüfpunkte) ----------
+  const filled = (v) => typeof v === 'string' ? v.trim().length > 0 : v !== null && v !== undefined && v !== '';
+  function checksFor(t) {
+    const d = doc();
+    const C = (label, ok) => ({ label, ok: !!ok });
+    const tree = Ops.pspTree(d);
+    const aps = tree.filter((x) => x.isLeaf);
+    switch (t) {
+      case 'canvas': {
+        const secs = new Set(Object.values(d.notes).map((n) => n.section));
+        return [
+          C('Zielsetzung ausgefüllt', secs.has('ziel')), C('Muss- und Abgrenzungskriterien', secs.has('kriterien_muss') && secs.has('kriterien_nicht')),
+          C('Erfolgskriterien', secs.has('erfolg')), C('Meilensteine', secs.has('meilensteine')), C('Arbeitspakete gesammelt', secs.has('arbeitspakete')),
+          C('Ergebnis beschrieben', secs.has('ergebnis')), C('Team, Stakeholder, Nutzer', secs.has('team') && secs.has('stakeholder') && secs.has('nutzer')),
+          C('Ressourcen, Projektumfeld, Risiken', secs.has('ressourcen') && secs.has('umfeld') && secs.has('risiken')),
+          C('Mindestens ein Entwicklungsschritt gespeichert', d.canvasVersions.length > 0),
+        ];
+      }
+      case 'fragen': {
+        const qs = rows('questions');
+        return [C('IST- und SOLL-Zustand beschrieben', filled(val('fragen.ist')) && filled(val('fragen.soll'))),
+          C('Termin Kundengespräch eingetragen', filled(val('fragen.termin'))), C('Verfasser eingetragen', filled(val('fragen.von'))),
+          C('Begrüßung und Gesprächseröffnung', filled(val('fragen.begruessung')) && filled(val('fragen.eroeffnung'))),
+          C('Kernphase: mindestens zwei Themengebiete', new Set(qs.map((q) => (q.thema || '').trim()).filter(Boolean)).size >= 2 || filled(val('fragen.kern'))),
+          C('Kernphase: offene und geschlossene Fragen', (qs.some((q) => q.typ === 'Offene Frage') && qs.some((q) => q.typ === 'Geschlossene Frage')) || filled(val('fragen.kern'))),
+          C('Gesprächsabschluss und Verabschiedung', filled(val('fragen.abschluss')) && filled(val('fragen.verabschiedung')))];
+      }
+      case 'pflichtenheft': {
+        const f = [['thema', 'Projektthema'], ['parteien', 'Beteiligte Parteien'], ['aufgabe', 'Allgemeine Aufgabe'], ['zeitrahmen', 'Zeitrahmen'],
+          ['kostenrahmen', 'Kostenrahmen'], ['ziel', 'Ziel (SMART+)'], ['anwendung', 'Anwendungsbereiche'], ['zielgruppen', 'Zielgruppen'],
+          ['betrieb', 'Betriebsbedingungen'], ['umfeld', 'Technisches Umfeld']];
+        return f.map(([k, l]) => C(l + ' ausgefüllt', filled(val('ph.' + k))))
+          .concat([C('Mindestens ein Musskriterium', rows('criteria', (r) => r.kind === 'M' && filled(r.text)).length),
+            C('Mindestens ein Abgrenzungskriterium', rows('criteria', (r) => r.kind === 'A' && filled(r.text)).length),
+            C('Qualitätsanforderungen eingestuft', rows('phQuality').length && rows('phQuality').every((r) => r.stufe)),
+            C('Glossar vorhanden', rows('glossar').length)]);
+      }
+      case 'psp':
+        return [C('Mindestens zwei Teilprojekte', tree.filter((x) => x.level === 1).length >= 2), C('Arbeitspakete vorhanden', aps.length >= 3),
+          C('Alle Elemente benannt', tree.length && tree.every((x) => filled(x.node.title)))];
+      case 'gantt': {
+        const { dates } = Ops.pspDates(d);
+        const conflicts = aps.filter((x) => (x.node.deps || []).some((p) => dates[p] && dates[p].e !== null && dates[x.node.id].s !== null && dates[x.node.id].s <= dates[p].e));
+        const end = Ops.dayNum(d.meta.end || '');
+        return [C('Alle Arbeitspakete terminiert', aps.length && aps.every((x) => x.node.start)),
+          C('Allen Arbeitspaketen Personen zugeordnet', aps.length && aps.every((x) => (x.node.persons || []).length)),
+          C('Abhängigkeiten eingetragen', aps.some((x) => (x.node.deps || []).length)),
+          C('Keine verletzten Abhängigkeiten', !conflicts.length),
+          C('Meilensteine gesetzt', aps.some((x) => x.node.milestone)),
+          C('Alles vor dem Projektende', end === null || aps.every((x) => dates[x.node.id].e === null || dates[x.node.id].e <= end))];
+      }
+      case 'kosten':
+        return [C('Stundensatz festgelegt', Number.isFinite(d.meta.stundensatz)),
+          C('Aufwand für alle Arbeitspakete', aps.length && aps.every((x) => x.node.hours > 0)),
+          C('Sachmittel erfasst', rows('costs').length)];
+      case 'risiken': {
+        const r = rows('risks');
+        return [C('Mindestens drei Risiken identifiziert', r.length >= 3), C('Alle Risiken mit Ursache', r.length && r.every((x) => filled(x.ursache))),
+          C('Alle Risiken bewertet', r.length && r.every((x) => x.ausmass && x.wkeit)), C('Für alle Risiken Maßnahmen', r.length && r.every((x) => filled(x.massnahme)))];
+      }
+      case 'qualitaet': {
+        const q = rows('quality');
+        return [C('Produktqualität geplant', q.some((x) => x.bereich === 'Produktqualität')), C('Prozessqualität geplant', q.some((x) => x.bereich === 'Prozessqualität')),
+          C('Zielgrößen messbar angegeben', q.length && q.every((x) => filled(x.zielgroesse))),
+          C('Zeitpunkt und Verantwortliche festgelegt', q.length && q.every((x) => filled(x.zeitpunkt) && filled(x.verantwortlich)))];
+      }
+      case 'ap':
+        return aps.length ? aps.map((x) => C(`${x.code} ${x.node.title || ''}: vollständig beschrieben`,
+          filled(x.node.lead) && filled(x.node.ergebnisse) && filled(x.node.taetigkeiten) && filled(x.node.voraussetzungen))) : [C('Arbeitspakete vorhanden', false)];
+      case 'doku':
+        return [C('Einträge vorhanden', rows('log').length)];
+      default: return null;
+    }
+  }
+  function progressAll() {
+    const out = {};
+    for (const [k] of TABS) {
+      const c = checksFor(k);
+      if (c && c.length) out[k] = { checks: c, pct: Math.round(100 * c.filter((x) => x.ok).length / c.length) };
+    }
+    return out;
+  }
+
+  // ---------- KI-Kennzeichnung und Selbstcheck ----------
+  function kiCard(t) {
+    if (!Ops.KI_DOCS.includes(t)) return '';
+    return `<div class="card mt-4 d-print-none"><div class="card-body">
+      <h2 class="h6 mb-1">KI-Kennzeichnung</h2>
+      <div class="form-text mb-2">Transparenz: Wo wurde KI zur Unterstützung genutzt? (Wird in der Dokumentansicht und im Ausdruck angezeigt.)</div>
+      ${inp('set|ki.' + t, val('ki.' + t), 'textarea', 'placeholder="z. B. Formulierung der Risikoursachen mit KI überarbeitet und geprüft"')}
+    </div></div>`;
+  }
+  function kiNote(t) {
+    const v = t === 'ap' ? (doc().psp[apSelected] || {}).ki : val('ki.' + t);
+    return filled(v) ? `<p style="margin-top:1.5rem;font-size:.9em"><b>Hinweis zur KI-Nutzung:</b> ${nl2br(v)}</p>` : '';
+  }
+  const CHECKS = {
+    pflichtenheft: ['ph', [
+      'Das Deckblatt enthält alle für das Projekt relevanten Informationen (Auftragnehmer/-geber, Namen Gruppenmitglieder, Projektname, ...).',
+      'Ein Inhaltsverzeichnis mit Seitenzahlen, sachlogischem Aufbau und Verweis auf die jeweiligen Kapitel ist vorhanden.',
+      'Die visuelle Gestaltung ist durchgehend übersichtlich und nachvollziehbar (Schrift, Größe, Einheitlichkeit ...).',
+      'Eine einleitende Beschreibung des Projektes ist vorhanden.',
+      'Rahmenbedingungen sind benannt.',
+      'Zielbeschreibung ist vorhanden (SMART+, vgl. Canvas).',
+      'Produktkriterien sind (nach Muss-, Kann- sowie Abgrenzungskriterien unterteilt) aufgelistet.',
+      'Produktfunktionen sind (als Produktdaten, Datenschnittstellen und Benutzeroberfläche unterteilt) aufgelistet, Priorisierung muss sichtbar werden (FIAE).',
+      'Produktkriterien sowie -funktionen sind mithilfe einer sinnvollen, eindeutigen Codierung versehen (Bezug zu späterem Abnahmeprotokoll).',
+      'Produkteinsatz (Zielgruppe, Betriebsbedingungen) wird beschrieben.',
+      'Qualitätszielbestimmung samt Priorisierung ist in tabellarischer Form eingefügt.',
+      'Abschließendes Bestätigungsfeld ist vorhanden: Ort, Datum, Unterschriften Auftraggeber/-nehmer.',
+      'Sämtliche Ausführungen sind für Laien verständlich formuliert.',
+      'Ein Glossar ist vorhanden.']],
+    gantt: ['g', [
+      'Start- und Endzeitpunkt sind eindeutig erkennbar.',
+      'Die Zeitachse ist eindeutig und sinnvoll gestaltet (z. B. Wochentage, Feiertage, Arbeitsstunden, paralleles Arbeiten muss sichtbar werden: vgl. Ressourcenplan).',
+      'Die Aufgabenabhängigkeiten zueinander sind visualisiert.']],
+  };
+  function checkCard(t) {
+    const c = CHECKS[t];
+    if (!c) return '';
+    const [pre, list] = c;
+    const done = list.filter((_, i) => val(`check.${pre}${i + 1}`) === true).length;
+    return `<div class="card mt-3 d-print-none"><div class="card-body">
+      <h2 class="h6 mb-1">Selbstcheck nach Bewertungsbogen <span class="badge ${done === list.length ? 'bg-success' : 'bg-secondary'}">${done}/${list.length}</span></h2>
+      <div class="form-text mb-2">Gemeinsame Checkliste der Gruppe (für alle sichtbar).</div>
+      ${list.map((txt, i) => `<div class="form-check"><input class="form-check-input" type="checkbox" id="chk${pre}${i}" data-bind="set|check.${pre}${i + 1}" ${val(`check.${pre}${i + 1}`) === true ? 'checked' : ''}>
+        <label class="form-check-label small" for="chk${pre}${i}">${i + 1}. ${esc(txt)}</label></div>`).join('')}
+    </div></div>`;
+  }
+
+  // ---------- Online-Anzeige ----------
+  const PEER_COLORS = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#4d7c0f', '#c2410c', '#0f766e'];
+  function peerColor(id) { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PEER_COLORS[h % PEER_COLORS.length]; }
+  const initials = (n) => { const p = (n || '?').trim().split(/\s+/); return ((p[0]?.[0] || '?') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); };
+  function renderPeers(peers) {
+    const seen = new Set();
+    $('#peers').innerHTML = peers.filter((p) => !seen.has(p.userId) && seen.add(p.userId))
+      .map((p) => `<span class="avatar" style="background:${peerColor(p.userId)}" title="${esc(p.name)} ist online">${esc(initials(p.name))}</span>`).join('');
+  }
+
+  const relTime = (t) => {
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 60) return 'gerade eben';
+    if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+    if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
+    return new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  };
+
+  // ---- Übersicht (Dashboard) ----
   VIEWS.uebersicht = {
     edit: () => {
       const d = doc();
-      const trello = d.meta.trello && /^https?:\/\//.test(d.meta.trello) ? `<a href="${esc(d.meta.trello)}" target="_blank" rel="noopener">Trello-Board öffnen</a>` : '';
-      return `<div class="row g-4">
-        <div class="col-lg-7">
-          <h2 class="h5">Projektdaten</h2>
-          ${field('Projektname', 'name')}
-          <div class="row">
-            <div class="col-md-6">${field('Auftraggeber', 'meta.auftraggeber')}</div>
-            <div class="col-md-6">${field('Auftragnehmer', 'meta.auftragnehmer')}</div>
-            <div class="col-md-6">${field('Projektleiter/in', 'meta.leader')}</div>
-            <div class="col-md-6">${field('Produkteigentümer', 'meta.owner')}</div>
-            <div class="col-md-6">${field('Projektstart', 'meta.start', 'date')}</div>
-            <div class="col-md-6">${field('Projektende / Deadline', 'meta.end', 'date', 'Wird im Gantt-Diagramm als rote Linie angezeigt.')}</div>
-          </div>
-          ${field('Gruppenmitglieder', 'meta.gruppe', 'textarea')}
-          ${field('Trello-Board (Link)', 'meta.trello', 'url', 'Kanban/Aufgaben laufen über Trello.')}
-          ${trello}
+      const prog = progressAll();
+      const docTabs = TABS.filter(([k]) => prog[k]);
+      const total = Math.round(docTabs.reduce((a, [k]) => a + prog[k].pct, 0) / docTabs.length);
+      const today = Ops.dayNum(new Date().toISOString().slice(0, 10));
+      const end = Ops.dayNum(d.meta.end || '');
+      const left = end === null ? null : end - today;
+      const { tree, dates } = Ops.pspDates(d);
+      const aps = tree.filter((t) => t.isLeaf);
+      const c = costData();
+      const highRisks = rows('risks').filter((r) => { const k = riskCat(r.ausmass, r.wkeit); return k && k.cat === 'hoch'; }).length;
+      const mine = aps.filter((t) => (t.node.persons || []).includes(me.name) || t.node.lead === me.name);
+      const upcoming = [];
+      for (const t of aps) {
+        const r = dates[t.node.id];
+        if (r.s === null) continue;
+        if (r.s >= today && r.s <= today + 14) upcoming.push([r.s, 'Beginn', t]);
+        if (r.e >= today && r.e <= today + 14) upcoming.push([r.e, t.node.milestone ? 'Meilenstein' : 'Ende', t]);
+      }
+      upcoming.sort((a, b) => a[0] - b[0]);
+      const open = [];
+      for (const [k, l] of docTabs) for (const ch of prog[k].checks) if (!ch.ok) open.push([k, l, ch.label]);
+      const stat = (label, value, sub, cls = '') => `<div class="col-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-body-secondary">${label}</div><div class="fs-3 fw-semibold ${cls}">${value}</div><div class="small text-body-secondary">${sub}</div></div></div></div>`;
+      const trello = d.meta.trello && /^https?:\/\//.test(d.meta.trello) ? `<a class="btn btn-sm btn-outline-primary" href="${esc(d.meta.trello)}" target="_blank" rel="noopener">Trello-Board öffnen</a>` : '';
+      return `<div class="row g-3 mb-3">
+          ${stat('Abgabe / Projektende', left === null ? '-' : left >= 0 ? `${left} Tage` : 'vorbei', end === null ? '<a href="#projekt">Datum festlegen</a>' : fmtDate(d.meta.end), left !== null && left < 7 ? 'text-danger' : '')}
+          ${stat('Gesamtstand', total + ' %', `<div class="progress mt-1" style="height:6px"><div class="progress-bar" style="width:${total}%"></div></div>`)}
+          ${stat('Arbeitspakete', aps.length, `${aps.filter((t) => t.node.start).length} terminiert`)}
+          ${stat('Gesamtkosten', fmtEuro(c.sumP + c.sumS), `${fmtNum(c.sumH)} Personenstunden`)}
+          ${stat('Hohe Risiken', highRisks, `von ${rows('risks').length} Risiken`, highRisks ? 'text-danger' : '')}
         </div>
-        <div class="col-lg-5">
-          <h2 class="h5">Planungsdokumente</h2>
-          <div class="list-group mb-4">
-            ${TABS.slice(1).map(([k, l]) => `<a class="list-group-item list-group-item-action" href="#${k}">${esc(l)}</a>`).join('')}
+        <div class="row g-3">
+          <div class="col-xl-7">
+            <div class="card mb-3"><div class="card-header fw-semibold">Stand der Planungsdokumente</div>
+              <div class="list-group list-group-flush">${docTabs.map(([k, l]) => `<a class="list-group-item list-group-item-action d-flex align-items-center gap-2" href="#${k}">
+                <span class="flex-grow-1 text-truncate" style="min-width:0">${esc(l)}</span>
+                <div class="progress flex-shrink-0" style="width:min(140px,28vw);height:8px"><div class="progress-bar ${prog[k].pct === 100 ? 'bg-success' : ''}" style="width:${prog[k].pct}%"></div></div>
+                <span class="small text-body-secondary" style="min-width:2.4rem;text-align:right">${prog[k].pct}%</span></a>`).join('')}</div></div>
+            <div class="card mb-3"><div class="card-header fw-semibold">Offene Punkte <span class="badge bg-secondary">${open.length}</span></div>
+              <ul class="list-group list-group-flush">${open.length ? open.slice(0, 15).map(([k, l, txt]) => `<li class="list-group-item small"><a href="#${k}" class="text-decoration-none">${esc(l)}</a>: ${esc(txt)}</li>`).join('')
+                + (open.length > 15 ? `<li class="list-group-item small text-body-secondary">... und ${open.length - 15} weitere</li>` : '')
+                : '<li class="list-group-item small text-success">Alles erledigt.</li>'}</ul></div>
           </div>
-          <h2 class="h6">Gerade online</h2>
-          <ul class="small">${S.peers.map((p) => `<li>${esc(p.name)}</li>`).join('')}</ul>
-          <a class="small" href="/api/projects/${encodeURIComponent(pid)}/export">Projekt als JSON sichern</a>
-        </div>
-      </div>`;
+          <div class="col-xl-5">
+            <div class="card mb-3"><div class="card-header fw-semibold">Meine Arbeitspakete</div>
+              <ul class="list-group list-group-flush">${mine.length ? mine.map((t) => `<li class="list-group-item small d-flex gap-2">
+                <span class="font-monospace">${t.code}</span><span class="flex-grow-1">${esc(t.node.title)}${t.node.lead === me.name ? ' <span class="badge text-bg-light border">Leitung</span>' : ''}</span>
+                <span class="text-body-secondary text-nowrap">${t.node.start ? fmtDate(t.node.start) + ' - ' + fmtDate(t.node.end || t.node.start) : 'ohne Termin'}</span></li>`).join('')
+                : '<li class="list-group-item small text-body-secondary">Dir sind noch keine Arbeitspakete zugeordnet (Zeitplan oder Arbeitspaketbeschreibung).</li>'}</ul></div>
+            <div class="card mb-3"><div class="card-header fw-semibold">Nächste 14 Tage</div>
+              <ul class="list-group list-group-flush">${upcoming.length ? upcoming.slice(0, 10).map(([day, what, t]) => `<li class="list-group-item small d-flex gap-2">
+                <span class="text-nowrap" style="width:5.5rem">${fmtDate(Ops.numDay(day))}</span><span class="badge ${what === 'Meilenstein' ? 'text-bg-dark' : what === 'Ende' ? 'text-bg-secondary' : 'text-bg-primary'}">${what}</span>
+                <span>${t.code} ${esc(t.node.title)}</span></li>`).join('') : '<li class="list-group-item small text-body-secondary">Keine Termine.</li>'}</ul></div>
+            <div class="card mb-3"><div class="card-header fw-semibold d-flex">Letzte Aktivitäten<a class="ms-auto small" href="#aktivitaet">alle</a></div>
+              <ul class="list-group list-group-flush">${S.activity.slice(0, 8).map((a) => `<li class="list-group-item small d-flex gap-2">
+                <span class="avatar sm" style="background:${peerColor(a.userId)}">${esc(initials(a.name))}</span>
+                <span class="flex-grow-1">${esc(a.name)} &middot; ${esc(Ops.AREAS[a.area] || a.area)}</span><span class="text-body-secondary text-nowrap">${relTime(a.at)}</span></li>`).join('')
+                || '<li class="list-group-item small text-body-secondary">Noch keine Aktivitäten.</li>'}</ul></div>
+            <div class="d-flex flex-wrap gap-2">${trello}<a class="btn btn-sm btn-outline-secondary" href="/api/projects/${encodeURIComponent(pid)}/export">Projekt als JSON sichern</a></div>
+          </div>
+        </div>`;
+    },
+  };
+
+  // ---- Projektdaten ----
+  VIEWS.projekt = {
+    edit: () => `<div class="card"><div class="card-body" style="max-width:900px">
+      ${field('Projektname', 'name')}
+      <div class="row">
+        <div class="col-md-6">${field('Auftraggeber', 'meta.auftraggeber')}</div>
+        <div class="col-md-6">${field('Auftragnehmer', 'meta.auftragnehmer')}</div>
+        <div class="col-md-6">${field('Projektleiter/in', 'meta.leader')}</div>
+        <div class="col-md-6">${field('Produkteigentümer', 'meta.owner')}</div>
+        <div class="col-md-6">${field('Projektstart', 'meta.start', 'date')}</div>
+        <div class="col-md-6">${field('Projektende / Abgabe', 'meta.end', 'date', 'Countdown in der Übersicht, rote Linie im Gantt-Diagramm.')}</div>
+      </div>
+      <div class="row">
+        <div class="col-md-6">${field('Kunde / Kundin (Lehrkraft)', 'meta.kunde')}</div>
+        <div class="col-md-6">${field('Technische/r Ansprechpartner/in (Betreuer/in)', 'meta.technik')}</div>
+      </div>
+      ${field('Gruppenmitglieder', 'meta.gruppe', 'textarea')}
+      ${field('Trello-Board (Link)', 'meta.trello', 'url', 'Kanban/Aufgaben laufen über Trello. Der Link erscheint in der Seitenleiste.')}
+      ${/^https?:\/\//.test(val('meta.trello')) ? `<a class="btn btn-sm btn-outline-primary mb-3" href="${esc(val('meta.trello'))}" target="_blank" rel="noopener">Trello-Board öffnen</a>` : ''}
+    </div></div>
+    <div class="card mt-3"><div class="card-header fw-semibold">Rollenverteilung</div><div class="card-body">
+      <div class="form-text mb-2">Vor Start der Projektarbeit in der Gruppe festlegen: Wer übernimmt welche Rolle und Verantwortung?</div>
+      <datalist id="userNames">${users.map((u) => `<option>${esc(u.name)}</option>`).join('')}</datalist>
+      <datalist id="rollen"><option>Projektleiter/in</option><option>Produkteigentümer/in</option><option>Protokollführer/in</option><option>Ansprechpartner/in Kunde</option><option>Technische Umsetzung</option><option>Dokumentation</option></datalist>
+      ${tableEditor('roles', [{ k: 'person', label: 'Person', type: 'text', w: '14rem', list: 'userNames' }, { k: 'rolle', label: 'Rolle', type: 'text', w: '14rem', list: 'rollen' }, { k: 'aufgaben', label: 'Aufgaben / Verantwortung' }])}
+      ${btn('+ Rolle', 'add', { c: 'roles' })}
+    </div></div>
+    <div class="card mt-3"><div class="card-header fw-semibold">Kommunikationsplan und Absprachen</div><div class="card-body">
+      ${field('Kommunikation in der Gruppe und mit Lehrkräften', 'meta.kommunikation', 'textarea', 'z. B. Kanäle (Teams-Kanal, Trello, dieses Tool), feste Treffen, Ablage von Dateien, Erreichbarkeit, Regeln bei Ausfall.')}
+    </div></div>`,
+  };
+
+  // ---- Aktivitäten ----
+  let actCache = null, actFilter = '';
+  function loadActivity() {
+    if (actCache) return actCache;
+    actCache = S.activity.slice();
+    App.api('GET', `/projects/${encodeURIComponent(pid)}/activity`).then((list) => { actCache = list; if (tab() === 'aktivitaet') render(); }).catch(() => {});
+    return actCache;
+  }
+  function activitySummary(list) {
+    const per = {};
+    for (const a of list) {
+      const e = per[a.name] = per[a.name] || { n: 0, days: new Set(), areas: {}, last: 0, userId: a.userId };
+      e.n += a.n; e.days.add(new Date(a.at).toDateString()); e.areas[a.area] = (e.areas[a.area] || 0) + a.n; e.last = Math.max(e.last, a.at);
+    }
+    return Object.entries(per).sort((a, b) => b[1].n - a[1].n);
+  }
+  const topAreas = (areas) => Object.entries(areas).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => `${Ops.AREAS[k] || k} (${n})`).join(', ');
+  VIEWS.aktivitaet = {
+    edit: () => {
+      const list = loadActivity();
+      const sum = activitySummary(list);
+      const names = sum.map(([n]) => n);
+      const shown = actFilter ? list.filter((a) => a.name === actFilter) : list;
+      return `<div class="card mb-3"><div class="card-header fw-semibold">Beteiligung je Person</div>
+        <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Person</th><th>Änderungen</th><th>Aktive Tage</th><th>Hauptsächlich</th><th>Zuletzt</th></tr></thead><tbody>
+        ${sum.map(([n, e]) => `<tr><td><span class="avatar sm me-1" style="background:${peerColor(e.userId)}">${esc(initials(n))}</span>${esc(n)}</td><td>${e.n}</td><td>${e.days.size}</td>
+          <td class="small">${esc(topAreas(e.areas))}</td><td class="small text-nowrap">${relTime(e.last)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-body-secondary">Noch keine Aktivitäten.</td></tr>'}
+        </tbody></table></div></div>
+        <div class="card"><div class="card-header d-flex align-items-center gap-2"><span class="fw-semibold me-auto">Verlauf</span>
+          <select class="form-select form-select-sm" style="width:auto" id="actFilter"><option value="">Alle Personen</option>${names.map((n) => `<option ${n === actFilter ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+        <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Zeit</th><th>Person</th><th>Bereich</th><th>Änderungen</th></tr></thead><tbody>
+        ${shown.slice(0, 500).map((a) => `<tr><td class="text-nowrap small">${new Date(a.at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${esc(a.name)}</td>
+          <td>${esc(Ops.AREAS[a.area] || a.area)}</td><td>${a.n}</td></tr>`).join('')}</tbody></table></div></div>
+        <p class="small text-body-secondary mt-2">Mehrere Änderungen derselben Person im selben Bereich innerhalb von 10 Minuten werden zu einem Eintrag zusammengefasst.</p>`;
+    },
+    doc: () => {
+      const list = loadActivity();
+      return `<h1>Aktivitätsnachweis</h1><h2>${esc(doc().name)}</h2><p>Stand: ${new Date().toLocaleString('de-DE')}</p>
+        <table><tr><th>Person</th><th>Änderungen</th><th>Aktive Tage</th><th>Hauptsächlich bearbeitet</th></tr>
+        ${activitySummary(list).map(([n, e]) => `<tr><td>${esc(n)}</td><td class="num">${e.n}</td><td class="num">${e.days.size}</td><td>${esc(topAreas(e.areas))}</td></tr>`).join('')}</table>`;
+    },
+    after: (view) => {
+      const f = $('#actFilter', view);
+      if (f) f.addEventListener('change', () => { actFilter = f.value; render(); });
+    },
+  };
+
+  // ---- Gesamtdokument (Abgabe) ----
+  const GESAMT = ['canvas', 'pflichtenheft', 'psp', 'gantt', 'kosten', 'risiken', 'qualitaet'];
+  let gesamtSel = new Set(GESAMT);
+  function canvasDoc() {
+    const d = doc();
+    const labels = { ziel: 'Zielsetzung (SMART+)', kriterien_muss: 'Muss-Kriterien', kriterien_nicht: 'Abgrenzungskriterien', erfolg: 'Erfolgskriterien',
+      meilensteine: 'Meilensteine', arbeitspakete: 'Brainstorming Arbeitspakete', ergebnis: 'Ergebnis', team: 'Team', stakeholder: 'Stakeholder / Anspruchsgruppen',
+      nutzer: 'Nutzer', ressourcen: 'Ressourcen', umfeld: 'Projektumfeld', risiken: 'Risiken' };
+    return `<h1>Project Canvas</h1><h2>${esc(d.name)}</h2><p>Projektleiter/in: ${esc(d.meta.leader)} &nbsp; Produkteigentümer: ${esc(d.meta.owner)}</p>
+      <table><tr><th style="width:28%">Feld</th><th>Inhalt</th></tr>${Ops.SECTIONS.map((sec) => {
+        const ns = Object.values(d.notes).filter((n) => n.section === sec).sort((a, b) => (sec === 'meilensteine' ? (a.date || '9').localeCompare(b.date || '9') : 0) || a.order - b.order);
+        return `<tr><td><b>${labels[sec]}</b></td><td>${ns.map((n) => `${n.date ? fmtDate(n.date) + ': ' : ''}${nl2br(n.text)}`).join('<br>') || '-'}</td></tr>`;
+      }).join('')}</table>
+      ${d.canvasVersions.length ? `<h3>Entwicklungsschritte</h3><table><tr><th>Bezeichnung</th><th>Datum</th><th>von</th></tr>${d.canvasVersions.map((v) => `<tr><td>${esc(v.label)}</td><td>${new Date(v.at).toLocaleDateString('de-DE')}</td><td>${esc(v.by)}</td></tr>`).join('')}</table>` : ''}`;
+  }
+  /** Gantt als Tabelle (für Word, wo die Grafik nicht funktioniert) */
+  function ganttTable() {
+    const { tree, dates } = Ops.pspDates(doc());
+    const codeOf = Object.fromEntries(tree.map((t) => [t.node.id, t.code]));
+    return `<table><tr><th>Nr.</th><th>Vorgang</th><th>Start</th><th>Ende</th><th>Dauer (Tage)</th><th>Personen</th><th>Vorgänger</th></tr>${tree.map((t) => {
+      const r = dates[t.node.id];
+      return `<tr><td>${t.code}</td><td>${t.isLeaf ? '' : '<b>'}${esc(t.node.title)}${t.node.milestone ? ' (Meilenstein)' : ''}${t.isLeaf ? '' : '</b>'}</td>
+        <td>${r.s !== null ? fmtDate(Ops.numDay(r.s)) : ''}</td><td>${r.e !== null ? fmtDate(Ops.numDay(r.e)) : ''}</td><td class="num">${r.s !== null ? r.e - r.s + 1 : ''}</td>
+        <td>${esc((t.node.persons || []).join(', '))}</td><td>${esc((t.node.deps || []).map((x) => codeOf[x]).filter(Boolean).join(', '))}</td></tr>`;
+    }).join('')}</table>`;
+  }
+  function gesamtHtml(forWord) {
+    const d = doc();
+    const titles = Object.fromEntries(TABS.map((t) => [t[0], t[1]]));
+    const parts = GESAMT.filter((k) => gesamtSel.has(k));
+    const part = (k) => {
+      if (k === 'canvas') return canvasDoc() + kiNote('canvas');
+      if (k === 'gantt') return `<h1>Zeitplan (Gantt-Diagramm)</h1><h2>${esc(d.name)}</h2>` + (forWord ? ganttTable() : Gantt.html(d, { editable: false })) + kiNote('gantt');
+      return VIEWS[k].doc() + kiNote(k);
+    };
+    return `<div class="cover"><h1>Planungsdokumente</h1><h2>${esc(d.name)}</h2>
+      <table style="max-width:600px"><tr><th>Auftraggeber</th><td>${esc(d.meta.auftraggeber)}</td></tr><tr><th>Auftragnehmer</th><td>${esc(d.meta.auftragnehmer)}</td></tr>
+      <tr><th>Projektleitung</th><td>${esc(d.meta.leader)}</td></tr><tr><th>Gruppenmitglieder</th><td>${nl2br(d.meta.gruppe)}</td></tr>
+      <tr><th>Stand</th><td>${new Date().toLocaleDateString('de-DE')}</td></tr></table>
+      <h3>Inhalt</h3><ol>${parts.map((k) => `<li>${esc(titles[k])}</li>`).join('')}</ol></div>
+      ${parts.map((k) => `<div class="page-break"></div>${part(k)}`).join('')}`;
+  }
+  VIEWS.gesamt = {
+    edit: () => `<div class="card"><div class="card-body">
+      <p class="mb-2">Welche Dokumente sollen in das Gesamtdokument? (Pflichtenheft enthält ein eigenes Deckblatt.)</p>
+      ${GESAMT.map((k) => `<div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="gs-${k}" data-gesamt="${k}" ${gesamtSel.has(k) ? 'checked' : ''}>
+        <label class="form-check-label" for="gs-${k}">${esc(TABS.find((t) => t[0] === k)[1])}</label></div>`).join('')}
+      <p class="small text-body-secondary mt-3 mb-0">Die Arbeitspaketbeschreibung ist eine Individualleistung und wird einzeln unter „Arbeitspaketbeschreibung“ gedruckt.
+        In der Word-Datei erscheint der Zeitplan als Tabelle, im Ausdruck/PDF als Gantt-Diagramm. Zum Ansehen oben „Dokumentansicht“ wählen.</p>
+    </div></div>`,
+    doc: () => gesamtHtml(false),
+    word: () => gesamtHtml(true),
+    after: (view) => {
+      $$('[data-gesamt]', view).forEach((c) => c.addEventListener('change', () => {
+        if (c.checked) gesamtSel.add(c.dataset.gesamt); else gesamtSel.delete(c.dataset.gesamt);
+      }));
     },
   };
 
@@ -216,7 +554,7 @@
           <button class="btn btn-outline-primary">Aktuellen Stand speichern</button>
         </form>
         <table class="table table-sm table-bordered" style="max-width:900px">
-          <thead class="table-light"><tr><th>Bezeichnung</th><th>Gespeichert am</th><th>von</th><th>Notizen</th><th></th></tr></thead>
+          <thead><tr><th>Bezeichnung</th><th>Gespeichert am</th><th>von</th><th>Notizen</th><th></th></tr></thead>
           <tbody>${versions.length ? versions.map((v) => `<tr><td>${esc(v.label)}</td><td>${new Date(v.at).toLocaleString('de-DE')}</td><td>${esc(v.by)}</td>
             <td>${Object.keys(v.notes || {}).length}</td>
             <td class="text-nowrap"><a class="btn btn-sm btn-outline-secondary" href="/p/${encodeURIComponent(pid)}/canvas?v=${encodeURIComponent(v.id)}">Ansehen</a>
@@ -358,6 +696,68 @@
     const el = $$('[data-bind]').find((x) => x.dataset.bind === `upd|psp|${row.id}|title`);
     if (el) el.focus();
   }
+  /** Phasen und Termine aus dem Kick-off als Vorgänge anlegen */
+  function ospTemplate() {
+    const T = [
+      ['Definitionsphase', [
+        ['Kick-off, Rollenverteilung und Kommunikationsplan', '2026-11-02', '2026-11-06'],
+        ['Fragenkatalog erstellen', '2026-11-02', '2026-11-06'],
+        ['Kundengespräch durchführen', '2026-11-09', '2026-11-13', true],
+        ['Pflichtenheft (Version 1.0) erstellen', '2026-11-16', '2026-11-20']]],
+      ['Planungsphase', [
+        ['Projektstrukturplan erstellen', '2026-11-23', '2026-11-27'],
+        ['Zeitplan (Gantt) erstellen', '2026-11-30', '2026-12-04'],
+        ['Ressourcen- und Kostenplan erstellen', '2026-12-07', '2026-12-11'],
+        ['Risikoplan erstellen', '2026-12-07', '2026-12-11'],
+        ['Qualitätsplan erstellen', '2026-12-14', '2026-12-18'],
+        ['Arbeitspaketbeschreibungen erstellen', '2026-12-14', '2026-12-18'],
+        ['Planungsdokumente abgeben', '2026-12-21', '2026-12-22', true]]],
+      ['Feedback und Überarbeitung', [
+        ['Feedback einholen (WuB, FU)', '2027-01-07', '2027-01-15'],
+        ['Planungsdokumente überarbeiten', '2027-01-15', '2027-01-22', true]]],
+      ['Realisierungsphase', [
+        ['Realisierung durchführen (in Arbeitspakete aufteilen)', '2027-01-25', '2027-03-05', true]]],
+      ['Präsentation und Fachgespräch', [
+        ['Präsentation vorbereiten', '2027-03-08', '2027-03-18'],
+        ['Präsentation und Fachgespräch', '2027-03-19', '2027-03-19', true]]],
+    ];
+    const existing = Object.keys(doc().psp).length;
+    if (!confirm(existing ? 'Die OSP-Phasen werden zusätzlich zu den vorhandenen Vorgängen angelegt. Fortfahren?'
+      : 'Phasen und Termine aus dem Kick-off als Vorgänge anlegen? Danach könnt ihr sie anpassen und verfeinern.')) return;
+    const tops = Object.values(doc().psp).filter((n) => !n.parent);
+    let order = tops.length ? Math.max(...tops.map((n) => n.order || 0)) + 1 : 1;
+    let prev = null;
+    for (const [phase, items] of T) {
+      const pidp = uid();
+      S.op({ t: 'add', c: 'psp', row: { id: pidp, parent: null, order: order++, title: phase, persons: [], deps: [] } });
+      items.forEach(([title, start, end, ms], i) => {
+        const id = uid();
+        // Kick-off und Fragenkatalog laufen parallel; sonst Kette innerhalb und zwischen den Phasen
+        const deps = prev && !(phase === 'Definitionsphase' && i === 1) ? [prev] : [];
+        S.op({ t: 'add', c: 'psp', row: { id, parent: pidp, order: i + 1, title, start, end, milestone: !!ms, persons: [], deps } });
+        if (!(phase === 'Definitionsphase' && i === 0)) prev = id;
+        else prev = id;
+      });
+    }
+    if (!doc().meta.start) S.op({ t: 'set', key: 'meta.start', value: '2026-11-02' });
+    if (!doc().meta.end) S.op({ t: 'set', key: 'meta.end', value: '2026-12-22' });
+    render();
+  }
+
+  /** Neuen Vorgang direkt hinter einem vorhandenen (gleiche Ebene) anlegen */
+  function pspAddAfter(id) {
+    const n = doc().psp[id];
+    if (!n) return;
+    const sib = pspSiblings(n);
+    const i = sib.findIndex((x) => x.id === id);
+    const next = sib[i + 1];
+    const order = next ? ((n.order || 0) + (next.order || 0)) / 2 : (n.order || 0) + 1;
+    const row = { id: uid(), parent: n.parent || null, order, title: '', persons: [], deps: [] };
+    S.op({ t: 'add', c: 'psp', row });
+    render();
+    const el = $$('[data-bind]').find((x) => x.dataset.bind === `upd|psp|${row.id}|title`);
+    if (el) el.focus();
+  }
   function pspSiblings(n) {
     return Object.values(doc().psp).filter((x) => (x.parent || '') === (n.parent || '')).sort((a, b) => (a.order || 0) - (b.order || 0));
   }
@@ -368,6 +768,8 @@
     doc: () => `<h1>Zeitplan (Gantt-Diagramm)</h1><h2>${esc(doc().name)}</h2>` + Gantt.html(doc(), { editable: false }),
     after: (view) => Gantt.attach(view, {
       doc: doc(), op: (o) => S.op(o), render, setDragging: (v) => { dragging = v; if (!v) render(); }, personsPicker,
+      baseline: (items) => S.send({ type: 'baseline', items }),
+      addAfter: (id) => pspAddAfter(id),
     }),
   };
 
@@ -400,7 +802,7 @@
         <h2 class="h5">Personalkosten (aus den Arbeitspaketen)</h2>
         <p class="small text-muted">Personen und Stunden je Person werden auch im Zeitplan gepflegt. Beispiel: 2 Personen &times; 104 h = 208 h.</p>
         <div class="table-responsive"><table class="table table-sm table-bordered table-edit">
-          <thead class="table-light"><tr><th class="w-code">Code</th><th>Arbeitspaket</th><th style="width:14rem">Personen</th><th style="width:5rem">Anzahl</th>
+          <thead><tr><th class="w-code">Code</th><th>Arbeitspaket</th><th style="width:14rem">Personen</th><th style="width:5rem">Anzahl</th>
           <th style="width:8rem">Std. je Person</th><th style="width:7rem">Std. gesamt</th><th style="width:8rem">Kosten</th></tr></thead>
           <tbody>${c.personal.length ? c.personal.map((p) => `<tr><td>${p.t.code}</td><td>${esc(p.t.node.title)}</td><td>${personsPicker(p.t.node)}</td>
             <td class="num">${p.n}</td><td>${inp(`upd|psp|${p.t.node.id}|hours`, p.t.node.hours, 'number', 'min="0"')}</td>
@@ -440,7 +842,7 @@
   };
   function perPersonTable(c, cls = '') {
     const e = Object.entries(c.perPerson).sort((a, b) => a[0].localeCompare(b[0]));
-    return `<table class="${cls}"><thead class="table-light"><tr><th>Person</th><th>Arbeitspakete</th><th>Stunden</th><th>Kosten</th></tr></thead><tbody>
+    return `<table class="${cls}"><thead><tr><th>Person</th><th>Arbeitspakete</th><th>Stunden</th><th>Kosten</th></tr></thead><tbody>
       ${e.length ? e.map(([n, v]) => `<tr><td>${esc(n)}</td><td>${esc(v.aps.join(', '))}</td><td class="num">${fmtNum(v.h)}</td><td class="num">${fmtEuro(v.h * c.rate)}</td></tr>`).join('')
         : '<tr><td colspan="4" class="text-muted">Noch keine Personen den Arbeitspaketen zugeordnet.</td></tr>'}</tbody></table>`;
   }
@@ -555,6 +957,9 @@
         ${field('Ergebnisse (Was genau soll bei diesem Arbeitspaket herauskommen?)', '', 'textarea').replace('data-bind="set|"', `data-bind="upd|psp|${n.id}|ergebnisse"`).replace('></textarea>', `>${esc(n.ergebnisse)}</textarea>`)}
         ${field('Tätigkeiten (Was genau muss in diesem Arbeitspaket gemacht werden?)', '', 'textarea').replace('data-bind="set|"', `data-bind="upd|psp|${n.id}|taetigkeiten"`).replace('></textarea>', `>${esc(n.taetigkeiten)}</textarea>`)}
         ${field('Voraussetzungen (Welche Dokumente und Ressourcen benötigen wir?)', '', 'textarea').replace('data-bind="set|"', `data-bind="upd|psp|${n.id}|voraussetzungen"`).replace('></textarea>', `>${esc(n.voraussetzungen)}</textarea>`)}
+        <div class="card mt-4"><div class="card-body"><h2 class="h6 mb-1">KI-Kennzeichnung</h2>
+          <div class="form-text mb-2">Wo wurde bei diesem Arbeitspaket KI zur Unterstützung genutzt? (Erscheint im Ausdruck.)</div>
+          ${inp(`upd|psp|${n.id}|ki`, n.ki, 'textarea')}</div></div>
       </div>`;
     },
     doc: () => {
@@ -587,15 +992,63 @@
     ['kern', 'Kernphase', 'Fragen nach Themengebieten/Kategorien und in Form eines Fragetrichters sortieren'],
     ['abschluss', 'Gesprächsabschluss', 'u. a. Eröffnungsfrage? Überleitungsfrage?'],
     ['verabschiedung', 'Verabschiedung', 'u. a. Eröffnungsfrage? Finale Frage?']];
+  const PHASEN_RAND = PHASEN.filter(([k]) => k !== 'kern');
+  const typRank = (t) => { const i = Ops.FRAGETYPEN.indexOf(t); return i < 0 ? 9 : i; };
+  /** Fragen der Kernphase nach Themengebiet gruppiert, innerhalb nach Fragepyramide sortiert */
+  function questionGroups() {
+    const list = rows('questions');
+    const themes = [];
+    for (const q of list) { const t = (q.thema || '').trim() || 'Ohne Themengebiet'; if (!themes.includes(t)) themes.push(t); }
+    return themes.map((t) => [t, list.filter((q) => ((q.thema || '').trim() || 'Ohne Themengebiet') === t)
+      .sort((x, y) => typRank(x.typ) - typRank(y.typ) || (x.order || 0) - (y.order || 0))]);
+  }
   VIEWS.fragen = {
-    edit: () => `<div style="max-width:1000px">
-      ${field('Fragenkatalog von', 'fragen.von')}
-      ${field('Ziel des Gespräches', 'fragen.ziel', 'textarea')}
-      ${PHASEN.map(([k, l, h]) => field(l, 'fragen.' + k, 'textarea', h)).join('')}</div>`,
-    doc: () => `<h1>Fragenkatalog</h1><h2>${esc(doc().name)}</h2>
+    edit: () => {
+      const themes = [...new Set(rows('questions').map((q) => (q.thema || '').trim()).filter(Boolean))];
+      return `<div style="max-width:1200px">
+      <div class="card mb-3"><div class="card-header fw-semibold">Vorbereitung (Projektauftrag lesen)</div><div class="card-body">
+        <div class="row">
+          <div class="col-md-6">${field('Wie ist die aktuelle Situation? (IST-Zustand)', 'fragen.ist', 'textarea')}</div>
+          <div class="col-md-6">${field('Was möchte der Kunde? (grober SOLL-Zustand)', 'fragen.soll', 'textarea')}</div>
+        </div>
+        ${field('Welche Informationen fehlen? Welche Themenbereiche sollten im Kundengespräch erfragt werden?', 'fragen.fehlend', 'textarea', 'Ergebnis von Mindmap und Brainstorming. Daraus werden die Themengebiete der Kernphase.')}
+        <div class="row"><div class="col-md-4">${field('Termin Kundengespräch', 'fragen.termin', 'date', 'Laut Kick-off bis spätestens 13.11.2026 im Fachunterricht.')}</div></div>
+      </div></div>
+      <div class="card mb-3"><div class="card-header fw-semibold">Fragenkatalog</div><div class="card-body">
+        ${field('Fragenkatalog von (Namen der Gruppenmitglieder)', 'fragen.von')}
+        ${field('Ziel des Gespräches', 'fragen.ziel', 'textarea')}
+        ${PHASEN_RAND.slice(0, 2).map(([k, l, h]) => field(l, 'fragen.' + k, 'textarea', h)).join('')}
+        <h3 class="h6 mt-4 mb-1">Kernphase</h3>
+        <div class="form-text mb-2">Fragen nach Themengebieten gruppieren und als Fragetrichter sortieren. Fragepyramide von der Basis nach oben:
+          offene Fragen (Informationen einholen), Alternativfragen (eingrenzen), geschlossene Fragen (Ziel feststellen), Kontrollfragen (Zustimmung einholen).
+          Die Sortierung nach Fragetyp erfolgt automatisch. In der Spalte „Antwort“ wird im Gespräch mitgeschrieben.</div>
+        <datalist id="themen">${themes.map((t) => `<option>${esc(t)}</option>`).join('')}</datalist>
+        ${tableEditor('questions', [
+          { k: 'thema', label: 'Themengebiet', type: 'text', w: '13rem', list: 'themen' },
+          { k: 'typ', label: 'Fragetyp', type: 'select', w: '11rem', options: [['', '-']].concat(Ops.FRAGETYPEN) },
+          { k: 'text', label: 'Frage' },
+          { k: 'antwort', label: 'Antwort des Kunden (Gesprächsnotiz)' }])}
+        ${btn('+ Frage', 'add', { c: 'questions', extra: JSON.stringify({ typ: 'Offene Frage' }) }, 'btn-primary')}
+        <div class="mt-4">${PHASEN_RAND.slice(2).map(([k, l, h]) => field(l, 'fragen.' + k, 'textarea', h)).join('')}</div>
+        ${filled(val('fragen.kern')) ? field('Kernphase (Freitext, ältere Fassung)', 'fragen.kern', 'textarea') : ''}
+      </div></div></div>`;
+    },
+    doc: () => {
+      const groups = questionGroups();
+      const kern = groups.length ? groups.map(([t, qs]) => `<b>${esc(t)}</b><ol style="margin:0 0 .5rem 1.1rem;padding:0">${qs.map((q) => `<li>${esc(q.text)}${q.typ ? ` <i>(${esc(q.typ)})</i>` : ''}</li>`).join('')}</ol>`).join('')
+        : nl2br(val('fragen.kern'));
+      const answers = rows('questions').filter((q) => filled(q.antwort));
+      return `<h1>Fragenkatalog</h1><h2>${esc(doc().name)}</h2>
       <p><b>Fragenkatalog von:</b> ${esc(val('fragen.von'))}</p><p><b>Ziel des Gespräches:</b> ${nl2br(val('fragen.ziel'))}</p>
-      <table><tr><th style="width:20%">Phasen</th><th>Fragen</th></tr>
-      ${PHASEN.map(([k, l]) => `<tr><td><b>${l}</b></td><td>${nl2br(val('fragen.' + k))}</td></tr>`).join('')}</table>`,
+      ${val('fragen.termin') ? `<p><b>Termin Kundengespräch:</b> ${fmtDate(val('fragen.termin'))}</p>` : ''}
+      <table><tr><th style="width:20%">Phasen</th><th>Beispielfragen</th></tr>
+      ${PHASEN.map(([k, l]) => `<tr><td><b>${l}</b></td><td>${k === 'kern' ? kern : nl2br(val('fragen.' + k))}</td></tr>`).join('')}</table>
+      ${filled(val('fragen.ist')) || filled(val('fragen.soll')) || filled(val('fragen.fehlend')) ? `<h3>Vorbereitung</h3><table>
+        <tr><th style="width:25%">IST-Zustand</th><td>${nl2br(val('fragen.ist'))}</td></tr><tr><th>Grober SOLL-Zustand</th><td>${nl2br(val('fragen.soll'))}</td></tr>
+        <tr><th>Fehlende Informationen / Themenbereiche</th><td>${nl2br(val('fragen.fehlend'))}</td></tr></table>` : ''}
+      ${answers.length ? `<h3>Gesprächsnotizen</h3><table><tr><th style="width:18%">Themengebiet</th><th style="width:37%">Frage</th><th>Antwort des Kunden</th></tr>
+        ${answers.map((q) => `<tr><td>${esc(q.thema)}</td><td>${nl2br(q.text)}</td><td>${nl2br(q.antwort)}</td></tr>`).join('')}</table>` : ''}`;
+    },
   };
 
   // ---- Grobe Zeitplanung / Dokumentation ----
@@ -629,6 +1082,7 @@
     // berechnete Werte aktualisieren (Selects, Zahlen, Datum sofort; Text beim Verlassen)
     if (el.tagName === 'SELECT' || el.type === 'checkbox') render();
     if (parts[1] === 'name' && parts[0] === 'set') $('#projTitle').textContent = v;
+    if (el.type === 'checkbox' && /^set\|check\./.test(b)) renderSidebar();
   }
 
   function onClick(e) {
@@ -656,6 +1110,8 @@
     if (a === 'delsnap') { if (confirm('Entwicklungsschritt löschen?')) S.send({ type: 'delsnapshot', id: d.id }); return; }
     // PSP
     if (a === 'pspchild') { pspAddChild(d.id); return; }
+    if (a === 'pspafter') { pspAddAfter(d.id); return; }
+    if (a === 'osptemplate') { ospTemplate(); return; }
     if (a === 'pspdel') {
       const n = doc().psp[d.id];
       const kids = Object.values(doc().psp).some((x) => x.parent === d.id);
@@ -713,6 +1169,7 @@
     }
   }
 
+  const LANDSCAPE = ['gantt', 'risiken', 'qualitaet', 'kosten', 'doku', 'psp'];
   function setPageOrientation(landscape) {
     let st = document.getElementById('pageStyle');
     if (!st) { st = document.createElement('style'); st.id = 'pageStyle'; document.head.appendChild(st); }
@@ -721,22 +1178,24 @@
 
   /** Gantt beim Drucken auf Seitenbreite (A4 quer, ca. 1040 px) verkleinern */
   function fitForPrint() {
-    const g = $('.gantt');
-    if (!g) return;
-    g.style.zoom = '';
-    const w = g.scrollWidth;
-    if (w > 1040) g.style.zoom = String(1040 / w);
+    const target = LANDSCAPE.includes(tab()) ? 1040 : 700;
+    for (const g of $$('.gantt')) {
+      g.style.zoom = '';
+      const w = g.scrollWidth;
+      if (w > target) g.style.zoom = String(target / w);
+    }
   }
-  function unfit() { const g = $('.gantt'); if (g) g.style.zoom = ''; }
+  function unfit() { $$('.gantt').forEach((g) => { g.style.zoom = ''; }); }
   window.addEventListener('beforeprint', () => {
-    if (['gantt', 'risiken', 'qualitaet', 'kosten', 'doku', 'psp'].includes(tab())) setPageOrientation(true);
+    if (LANDSCAPE.includes(tab())) setPageOrientation(true);
     fitForPrint();
   });
   window.addEventListener('afterprint', unfit);
 
   function printView() {
     if (mode !== 'doc') { mode = 'doc'; render(); }
-    setPageOrientation(['gantt', 'risiken', 'qualitaet', 'kosten', 'doku', 'psp'].includes(tab()));
+    setPageOrientation(LANDSCAPE.includes(tab()));
+    fitForPrint();
     // Personen-Dropdowns schließen, dann drucken
     setTimeout(() => window.print(), 100);
   }
@@ -747,7 +1206,7 @@
     if (!V.doc) return;
     const title = TABS.find((x) => x[0] === t)[1];
     const holder = document.createElement('div');
-    holder.innerHTML = V.doc();
+    holder.innerHTML = (V.word ? V.word() : V.doc()) + kiNote(t);
     $$('.no-word', holder).forEach((x) => x.remove());
     App.downloadWord(`${doc().name} - ${title}`, title, holder.innerHTML);
   }
@@ -764,19 +1223,27 @@
     view.addEventListener('change', (e) => { if (e.target.tagName === 'SELECT' && e.target.dataset.bind) return; onChange(e); });
     view.addEventListener('focusout', (e) => { if (e.target.dataset && e.target.dataset.bind) S.flush(); });
     document.addEventListener('click', onClick);
-    window.addEventListener('hashchange', () => { mode = 'edit'; render(); window.scrollTo(0, 0); });
+    // Strg+Z im Zeitplan: letzte Gantt-Aktion rückgängig (in Eingabefeldern gilt das normale Rückgängig)
+    document.addEventListener('keydown', (e) => {
+      if (tab() === 'gantt' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+        e.preventDefault();
+        Gantt._undo();
+      }
+    });
+    window.addEventListener('hashchange', () => { mode = 'edit'; actCache = null; render(); window.scrollTo(0, 0); });
 
     S = Sync.connect(pid, {
-      onInit: () => render(),
+      onInit: () => { render(); renderPeers(S.peers); },
       onOps: () => {
         // während jemand in einem Personen-Dropdown ist, nicht neu zeichnen
         if (document.querySelector('.dropdown-menu.show')) return;
         render();
       },
       onPeers: (peers) => {
-        $('#peers').textContent = 'Online: ' + peers.map((p) => p.name).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+        renderPeers(peers);
         if (tab() === 'uebersicht' && !document.activeElement.dataset.bind) render();
       },
+      onActivity: () => { if (['uebersicht', 'aktivitaet'].includes(tab()) && !document.activeElement.dataset.bind) { actCache = null; render(); } },
       onStatus: (state, text) => {
         const s = $('#status');
         s.textContent = text;

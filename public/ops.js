@@ -13,14 +13,22 @@
   const MASSNAHMENARTEN = ['Vermeidung', 'Verminderung', 'Begrenzung der Schadenshöhe', 'Abwälzung', 'Überwachung'];
   const QSTUFEN = ['sehr relevant', 'relevant', 'normal', 'nicht relevant'];
   const QBEREICHE = ['Produktqualität', 'Prozessqualität'];
+  // Fragepyramide (Reihenfolge = von der Basis nach oben)
+  const FRAGETYPEN = ['Offene Frage', 'Alternativfrage', 'Geschlossene Frage', 'Kontrollfrage'];
+  // Termine laut Kick-off OSP 2026/27
+  const OSP_TERMINE = [
+    ['2026-11-13', 'Deadline Kundengespräch'], ['2026-12-22', 'Abgabe Planungsdokumente'], ['2027-01-15', 'Ende Feedback'],
+    ['2027-01-22', 'Deadline Überarbeitung'], ['2027-01-25', 'Start Realisierungsphase'], ['2027-03-05', 'Ende Durchführung (max.)'],
+    ['2027-03-19', 'Deadline Präsentation OSP']];
 
   // Feldtypen: s=Text(max), n=Zahl, b=Ja/Nein, d=Datum, e=Auswahl, l=Liste von Texten, id=Verweis
   const S = (max) => ['s', max];
   const COLLS = {
-    notes: { section: ['e', SECTIONS], text: S(4000), color: ['e', COLORS], order: ['n'], date: ['d'], done: ['b'], author: S(80) },
+    notes: { section: ['e', SECTIONS], text: S(4000), color: ['e', COLORS], order: ['n'], date: ['d'], done: ['b'], author: S(80), editedBy: S(80), editedAt: ['n'] },
     psp: {
       parent: ['id'], order: ['n'], title: S(300), start: ['d'], end: ['d'], persons: ['l'], hours: ['n'],
       milestone: ['b'], deps: ['l'], lead: S(100), ergebnisse: S(8000), taetigkeiten: S(8000), voraussetzungen: S(8000),
+      ki: S(2000), progress: ['n'],
     },
     criteria: { kind: ['e', ['M', 'W', 'A']], text: S(2000), order: ['n'] },
     phQuality: { merkmal: S(200), stufe: ['e', QSTUFEN.concat([''])], order: ['n'] },
@@ -35,6 +43,10 @@
     },
     costs: { order: ['n'], bezeichnung: S(300), menge: ['n'], einheit: S(40), einzelpreis: ['n'], bemerkung: S(1000) },
     log: { order: ['n'], datum: ['d'], todo: S(2000), helfer: S(300), verantwortlich: S(200), erledigt: S(2000) },
+    // Fragenkatalog, Kernphase: Fragen nach Themengebiet und Fragetyp (Fragepyramide)
+    questions: { order: ['n'], thema: S(200), typ: ['e', FRAGETYPEN.concat([''])], text: S(2000), antwort: S(4000) },
+    // Rollenverteilung im Team
+    roles: { order: ['n'], person: S(100), rolle: S(200), aufgaben: S(2000) },
   };
 
   const SCALARS = {
@@ -47,7 +59,45 @@
     'ph.ergaenzungen': S(10000), 'ph.ort': S(300),
     'fragen.von': S(1000), 'fragen.ziel': S(2000), 'fragen.begruessung': S(10000), 'fragen.eroeffnung': S(10000),
     'fragen.kern': S(20000), 'fragen.abschluss': S(10000), 'fragen.verabschiedung': S(10000),
+    'fragen.ist': S(10000), 'fragen.soll': S(10000), 'fragen.fehlend': S(10000), 'fragen.termin': ['d'],
+    'meta.kunde': S(300), 'meta.technik': S(300), 'meta.kommunikation': S(10000),
   };
+
+  // KI-Kennzeichnung je Dokument (Kick-off: „Nachweisen/markieren, wo KI zur Unterstützung genutzt wurde“)
+  const KI_DOCS = ['canvas', 'pflichtenheft', 'psp', 'gantt', 'kosten', 'risiken', 'qualitaet', 'fragen', 'doku'];
+  for (const k of KI_DOCS) SCALARS['ki.' + k] = S(3000);
+  // Selbstcheck nach Bewertungskriterien (Pflichtenheft 1-14, Gantt 1-3)
+  for (let i = 1; i <= 14; i++) SCALARS['check.ph' + i] = ['b'];
+  for (let i = 1; i <= 3; i++) SCALARS['check.g' + i] = ['b'];
+
+  // Bereiche für das Aktivitätsprotokoll
+  const AREAS = {
+    projekt: 'Projektdaten', canvas: 'Project Canvas', pflichtenheft: 'Pflichtenheft', psp: 'Projektstrukturplan',
+    gantt: 'Zeitplan (Gantt)', kosten: 'Ressourcen- und Kostenplan', risiken: 'Risikoplan', qualitaet: 'Qualitätsplan',
+    ap: 'Arbeitspaketbeschreibung', fragen: 'Fragenkatalog', doku: 'Grobe Zeitplanung',
+  };
+  const COLL_AREA = { notes: 'canvas', criteria: 'pflichtenheft', phQuality: 'pflichtenheft', glossar: 'pflichtenheft',
+    risks: 'risiken', quality: 'qualitaet', costs: 'kosten', log: 'doku', questions: 'fragen', roles: 'projekt' };
+  const PSP_GANTT = ['start', 'end', 'persons', 'hours', 'deps', 'milestone', 'progress'];
+  const PSP_AP = ['ergebnisse', 'taetigkeiten', 'voraussetzungen', 'lead', 'ki'];
+  function areaOf(op) {
+    if (op.t === 'set') {
+      const [a, b] = op.key.split('.');
+      if (a === 'ph') return 'pflichtenheft';
+      if (a === 'fragen') return 'fragen';
+      if (a === 'ki') return b;
+      if (a === 'check') return b.startsWith('ph') ? 'pflichtenheft' : 'gantt';
+      if (op.key === 'meta.stundensatz') return 'kosten';
+      return 'projekt';
+    }
+    if (op.c === 'psp') {
+      const keys = Object.keys(op.patch || op.row || {});
+      if (op.t === 'upd' && keys.some((k) => PSP_AP.includes(k))) return 'ap';
+      if (op.t === 'upd' && keys.length && keys.every((k) => PSP_GANTT.includes(k))) return 'gantt';
+      return 'psp';
+    }
+    return COLL_AREA[op.c] || 'projekt';
+  }
 
   const ID_RE = /^[A-Za-z0-9_-]{6,40}$/;
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -82,6 +132,7 @@
       meta: { stundensatz: null },
       ph: { qhinweis: 'Diese tabellarische Übersicht dient lediglich der Schwerpunktsetzung im Projekt. Es lässt sich keinerlei rechtlicher Anspruch daraus ableiten.' },
       fragen: { ziel: 'Die Wünsche und Anforderungen Ihres Kunden konkret und umfassend analysieren.' },
+      ki: {}, check: {}, baseline: null,
       canvasVersions: [],
     };
     for (const c of Object.keys(COLLS)) p[c] = {};
@@ -209,7 +260,7 @@
   }
 
   const api = {
-    SECTIONS, COLORS, RISIKOARTEN, MASSNAHMENARTEN, QSTUFEN, QBEREICHE, COLLS, SCALARS,
+    SECTIONS, COLORS, RISIKOARTEN, MASSNAHMENARTEN, QSTUFEN, QBEREICHE, FRAGETYPEN, OSP_TERMINE, COLLS, SCALARS, AREAS, KI_DOCS, areaOf,
     apply, emptyProject, getPath, pspTree, pspDates, dayNum, numDay, ID_RE,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

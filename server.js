@@ -1,15 +1,15 @@
 'use strict';
 /**
  * OSP-Projektmanagement – Server
- * Konten mit Freischaltung durch Admin, Projekte mit Live-Zusammenarbeit (WebSocket).
+ * Konten mit Freischaltung durch Admin, Projekte mit Live-Zusammenarbeit (WebSocket), Speicherung in SQLite.
  */
 const http = require('http');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const Ops = require('./public/ops.js');
+const DB = require('./lib/db.js');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -18,28 +18,8 @@ const ADMIN_LOGIN = (process.env.ADMIN_LOGIN || 'admin').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
 const SESSION_DAYS = 30;
-const PROJ_DIR = path.join(DATA_DIR, 'projects');
-fs.mkdirSync(PROJ_DIR, { recursive: true });
 
-// ---------- Speicher (JSON-Dateien, atomar geschrieben) ----------
-
-function readJson(file, def) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return def; }
-}
-function writeJson(file, data) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data));
-  fs.renameSync(tmp, file);
-}
-
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
-let users = readJson(USERS_FILE, []);
-let sessions = readJson(SESSIONS_FILE, {});
-const saveUsers = () => writeJson(USERS_FILE, users);
-let sessTimer = null;
-const saveSessions = () => { clearTimeout(sessTimer); sessTimer = setTimeout(() => writeJson(SESSIONS_FILE, sessions), 200); };
-
+const db = DB.open(DATA_DIR);
 const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
 
 // ---------- Passwörter ----------
@@ -59,15 +39,16 @@ function checkPassword(pw, stored) {
 
 const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, createdAt: u.createdAt, mustChange: !!u.mustChange });
 
-if (!users.some((u) => u.role === 'admin')) {
-  users = users.filter((u) => u.email !== ADMIN_LOGIN);
-  users.push({
+if (db.users.countAdmins() === 0) {
+  const old = db.users.byEmail(ADMIN_LOGIN);
+  if (old) db.users.delete(old.id);
+  db.users.insert({
     id: newId(9), name: 'Administrator', email: ADMIN_LOGIN, pw: hashPassword(ADMIN_PASSWORD),
     role: 'admin', status: 'active', mustChange: true, createdAt: Date.now(),
   });
-  saveUsers();
   console.log(`Standard-Admin angelegt: Login "${ADMIN_LOGIN}" (Passwort muss beim ersten Login geändert werden)`);
 }
+db.sessions.purge();
 
 // ---------- Sitzungen ----------
 
@@ -82,10 +63,10 @@ function parseCookies(header) {
 
 function userFromReq(req) {
   const token = parseCookies(req.headers.cookie).sid;
-  const s = token && sessions[token];
+  const s = token && db.sessions.get(token);
   if (!s) return null;
-  if (s.exp < Date.now()) { delete sessions[token]; saveSessions(); return null; }
-  const u = users.find((x) => x.id === s.userId);
+  if (s.exp < Date.now()) { db.sessions.delete(token); return null; }
+  const u = db.users.byId(s.user_id);
   if (!u || u.status !== 'active') return null;
   return u;
 }
@@ -95,8 +76,7 @@ function setSessionCookie(res, token, maxAgeSec) {
 }
 
 function endSessionsOf(userId) {
-  for (const [t, s] of Object.entries(sessions)) if (s.userId === userId) delete sessions[t];
-  saveSessions();
+  db.sessions.deleteForUser(userId);
   for (const ws of wss.clients) if (ws.user && ws.user.id === userId) ws.close(4001, 'logout');
 }
 
@@ -110,18 +90,17 @@ function tooManyAttempts(ip) {
 }
 function noteAttempt(ip) { (attempts.get(ip) || attempts.set(ip, []).get(ip)).push(Date.now()); }
 
-// ---------- Projekte ----------
+// ---------- Projekte (im Speicher, solange jemand verbunden ist) ----------
 
 /** id -> { doc, clients:Set, timer } */
 const rooms = new Map();
-const projFile = (id) => path.join(PROJ_DIR, id + '.json');
 const PID_RE = /^[A-Za-z0-9_-]{8,40}$/;
 
 function loadProject(id) {
   if (!PID_RE.test(id)) return null;
   let room = rooms.get(id);
   if (room) return room;
-  const doc = readJson(projFile(id), null);
+  const doc = db.projects.get(id);
   if (!doc) return null;
   // fehlende Bereiche ergänzen (z. B. nach Updates)
   const empty = Ops.emptyProject(id);
@@ -133,18 +112,11 @@ function loadProject(id) {
 function saveNow(room) {
   clearTimeout(room.timer); room.timer = null;
   if (room.deleted) return;
-  try { writeJson(projFile(room.doc.id), room.doc); } catch (e) { console.error('Speichern fehlgeschlagen', e.message); }
+  try { db.projects.save(room.doc); } catch (e) { console.error('Speichern fehlgeschlagen', e.message); }
 }
 function scheduleSave(room) {
   room.doc.updatedAt = Date.now();
   if (!room.timer) room.timer = setTimeout(() => saveNow(room), 700);
-}
-function listProjects() {
-  return fs.readdirSync(PROJ_DIR).filter((f) => f.endsWith('.json')).map((f) => {
-    const id = f.slice(0, -5);
-    const d = rooms.get(id)?.doc || readJson(projFile(id), null);
-    return d && { id: d.id, name: d.name, createdAt: d.createdAt, updatedAt: d.updatedAt || d.createdAt };
-  }).filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 // ---------- HTTP ----------
@@ -202,18 +174,16 @@ api.post('/register', (req, res) => {
   if (!name) return res.status(400).json({ error: 'Bitte Namen angeben.' });
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Bitte gültige E-Mail-Adresse angeben.' });
   if (pw.length < 8) return res.status(400).json({ error: 'Das Passwort muss mindestens 8 Zeichen haben.' });
-  if (users.some((u) => u.email === email)) return res.status(400).json({ error: 'Diese E-Mail-Adresse ist bereits registriert.' });
-  const u = { id: newId(9), name, email, pw: hashPassword(pw), role: 'user', status: 'pending', createdAt: Date.now() };
-  users.push(u);
-  saveUsers();
-  res.json({ ok: true, active: u.status === 'active' });
+  if (db.users.byEmail(email)) return res.status(400).json({ error: 'Diese E-Mail-Adresse ist bereits registriert.' });
+  db.users.insert({ id: newId(9), name, email, pw: hashPassword(pw), role: 'user', status: 'pending', createdAt: Date.now() });
+  res.json({ ok: true, active: false });
 });
 
 api.post('/login', (req, res) => {
   const ip = req.ip;
   if (tooManyAttempts(ip)) return res.status(429).json({ error: 'Zu viele Versuche. Bitte 15 Minuten warten.' });
   const email = String(req.body.email || '').trim().toLowerCase();
-  const u = users.find((x) => x.email === email);
+  const u = db.users.byEmail(email);
   if (!u || !checkPassword(String(req.body.password || ''), u.pw)) {
     noteAttempt(ip);
     return res.status(400).json({ error: 'E-Mail oder Passwort falsch.' });
@@ -221,21 +191,20 @@ api.post('/login', (req, res) => {
   if (u.status === 'pending') return res.status(403).json({ error: 'Dein Konto wurde noch nicht freigeschaltet. Bitte warte auf die Freischaltung durch einen Admin.' });
   if (u.status === 'blocked') return res.status(403).json({ error: 'Dein Konto ist gesperrt.' });
   const token = newId(32);
-  sessions[token] = { userId: u.id, exp: Date.now() + SESSION_DAYS * 86400000 };
-  saveSessions();
+  db.sessions.create(token, u.id, Date.now() + SESSION_DAYS * 86400000);
   setSessionCookie(res, token, SESSION_DAYS * 86400);
   res.json({ ok: true });
 });
 
 api.post('/logout', (req, res) => {
   const token = parseCookies(req.headers.cookie).sid;
-  if (token && sessions[token]) { delete sessions[token]; saveSessions(); }
+  if (token) db.sessions.delete(token);
   setSessionCookie(res, '', 0);
   res.json({ ok: true });
 });
 
 api.get('/me', auth, (req, res) => {
-  res.json({ ...publicUser(req.user), pending: req.user.role === 'admin' ? users.filter((u) => u.status === 'pending').length : 0 });
+  res.json({ ...publicUser(req.user), pending: req.user.role === 'admin' ? db.users.countPending() : 0 });
 });
 
 api.post('/me', auth, (req, res) => {
@@ -250,22 +219,20 @@ api.post('/me', auth, (req, res) => {
     if (String(req.body.newPassword).length < 8) return res.status(400).json({ error: 'Das neue Passwort muss mindestens 8 Zeichen haben.' });
     if (String(req.body.newPassword) === String(req.body.password)) return res.status(400).json({ error: 'Das neue Passwort muss sich vom alten unterscheiden.' });
     u.pw = hashPassword(String(req.body.newPassword));
-    delete u.mustChange;
+    u.mustChange = false;
   }
-  saveUsers();
+  db.users.update(u);
   res.json({ ok: true });
 });
 
 // Namen aller freigeschalteten Nutzer (für Personen-Auswahl)
-api.get('/users', auth, (req, res) => {
-  res.json(users.filter((u) => u.status === 'active').map((u) => ({ id: u.id, name: u.name })));
-});
+api.get('/users', auth, (req, res) => res.json(db.users.active()));
 
 // --- API: Admin ---
-api.get('/admin/users', auth, admin, (req, res) => res.json(users.map(publicUser)));
+api.get('/admin/users', auth, admin, (req, res) => res.json(db.users.all().map(publicUser)));
 
 api.post('/admin/users/:id', auth, admin, (req, res) => {
-  const u = users.find((x) => x.id === req.params.id);
+  const u = db.users.byId(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nicht gefunden' });
   const self = u.id === req.user.id;
   const action = req.body.action;
@@ -283,23 +250,31 @@ api.post('/admin/users/:id', auth, admin, (req, res) => {
       break;
     }
     case 'delete':
-      users = users.filter((x) => x.id !== u.id);
       endSessionsOf(u.id);
-      break;
+      db.users.delete(u.id);
+      return res.json({ ok: true });
     default: return res.status(400).json({ error: 'Unbekannte Aktion' });
   }
-  saveUsers();
+  db.users.update(u);
   res.json({ ok: true });
 });
 
 // --- API: Projekte ---
-api.get('/projects', auth, (req, res) => res.json(listProjects()));
+api.get('/projects', auth, (req, res) => {
+  res.json(db.projects.list().map((p) => {
+    const d = rooms.get(p.id)?.doc || db.projects.get(p.id) || {};
+    const aps = Ops.pspTree({ psp: d.psp || {} }).filter((t) => t.isLeaf).length;
+    return { ...p, end: (d.meta && d.meta.end) || '', leader: (d.meta && d.meta.leader) || '', aps,
+      trello: d.meta && /^https?:\/\//.test(d.meta.trello || '') ? d.meta.trello : '',
+      online: rooms.get(p.id) ? new Set([...rooms.get(p.id).clients].map((c) => c.user.id)).size : 0 };
+  }));
+});
 
 api.post('/projects', auth, (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 200) || 'Neues Projekt';
   const id = newId(12);
-  const doc = Ops.emptyProject(id, name, req.user.name);
-  writeJson(projFile(id), doc);
+  db.projects.create(Ops.emptyProject(id, name, req.user.name));
+  db.activity.log(id, req.user, 'projekt');
   res.json({ id });
 });
 
@@ -310,7 +285,7 @@ api.delete('/projects/:id', auth, admin, (req, res) => {
   clearTimeout(room.timer);
   for (const ws of room.clients) ws.close(4004, 'deleted');
   rooms.delete(req.params.id);
-  fs.renameSync(projFile(req.params.id), projFile(req.params.id) + '.deleted');
+  db.projects.delete(req.params.id);
   res.json({ ok: true });
 });
 
@@ -319,6 +294,11 @@ api.get('/projects/:id/export', auth, (req, res) => {
   if (!room) return res.status(404).json({ error: 'Nicht gefunden' });
   res.setHeader('Content-Disposition', `attachment; filename="projekt-${room.doc.id}.json"`);
   res.json(room.doc);
+});
+
+api.get('/projects/:id/activity', auth, (req, res) => {
+  if (!loadProject(req.params.id)) return res.status(404).json({ error: 'Nicht gefunden' });
+  res.json(db.activity.list(req.params.id, 2000));
 });
 
 app.use('/api', api);
@@ -335,7 +315,8 @@ server.on('upgrade', (req, socket, head) => {
   const host = req.headers.host;
   const user = userFromReq(req);
   const room = loadProject(url.searchParams.get('p') || '');
-  const badOrigin = origin && new URL(origin).host !== host;
+  let badOrigin = false;
+  try { badOrigin = !!origin && new URL(origin).host !== host; } catch { badOrigin = true; }
   if (url.pathname !== '/ws' || !user || user.mustChange || !room || badOrigin) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
@@ -350,13 +331,23 @@ function broadcast(room, msg, except) {
 }
 const peers = (room) => [...room.clients].map((c) => c.peer);
 
+function logActivity(room, user, areas) {
+  for (const [area, n] of Object.entries(areas)) {
+    const entry = db.activity.log(room.doc.id, user, area, n);
+    broadcast(room, { type: 'activity', entry });
+  }
+}
+
 wss.on('connection', (ws, room, user) => {
   ws.user = user;
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   ws.peer = { id: newId(6), userId: user.id, name: user.name, focus: null };
   room.clients.add(ws);
-  ws.send(JSON.stringify({ type: 'init', doc: room.doc, you: ws.peer.id, user: publicUser(user), peers: peers(room) }));
+  ws.send(JSON.stringify({
+    type: 'init', doc: room.doc, you: ws.peer.id, user: publicUser(user), peers: peers(room),
+    activity: db.activity.list(room.doc.id, 300),
+  }));
   broadcast(room, { type: 'peers', peers: peers(room) }, ws);
 
   ws.on('message', (raw) => {
@@ -365,9 +356,21 @@ wss.on('connection', (ws, room, user) => {
     if (msg.type === 'ops' && Array.isArray(msg.ops)) {
       const applied = [];
       for (const op of msg.ops.slice(0, 500)) applied.push(...Ops.apply(room.doc, op));
+      // Canvas-Notizen: Autor und letzte Bearbeitung serverseitig setzen (nicht vom Browser übernehmen)
+      for (const op of applied) {
+        if (op.c !== 'notes' || (op.t !== 'add' && op.t !== 'upd')) continue;
+        const note = room.doc.notes[op.t === 'add' ? op.row.id : op.id];
+        if (!note) continue;
+        const meta = { editedBy: user.name, editedAt: Date.now() };
+        if (op.t === 'add') { meta.author = user.name; Object.assign(op.row, meta); } else Object.assign(op.patch, meta);
+        Object.assign(note, meta);
+      }
       if (applied.length) {
         scheduleSave(room);
         broadcast(room, { type: 'ops', ops: applied }, ws);
+        const areas = {};
+        for (const op of applied) { const a = Ops.areaOf(op); areas[a] = (areas[a] || 0) + 1; }
+        logActivity(room, user, areas);
       }
     } else if (msg.type === 'snapshot') {
       // Entwicklungsschritt des Canvas speichern
@@ -379,10 +382,30 @@ wss.on('connection', (ws, room, user) => {
       room.doc.canvasVersions.push(snap);
       scheduleSave(room);
       broadcast(room, { type: 'snapshot', snap });
+      logActivity(room, user, { canvas: 1 });
+    } else if (msg.type === 'baseline') {
+      // Basisplan des Gantt-Diagramms speichern oder entfernen
+      let base = null;
+      if (msg.items && typeof msg.items === 'object') {
+        const items = {};
+        for (const [id, v] of Object.entries(msg.items).slice(0, 2000)) {
+          if (room.doc.psp[id] && Array.isArray(v) && Number.isInteger(v[0]) && Number.isInteger(v[1])) items[id] = [v[0], v[1]];
+        }
+        base = { at: Date.now(), by: user.name, items };
+      }
+      room.doc.baseline = base;
+      scheduleSave(room);
+      broadcast(room, { type: 'baseline', baseline: base });
+      logActivity(room, user, { gantt: 1 });
     } else if (msg.type === 'delsnapshot') {
       room.doc.canvasVersions = room.doc.canvasVersions.filter((s) => s.id !== msg.id);
       scheduleSave(room);
       broadcast(room, { type: 'delsnapshot', id: msg.id });
+    } else if (msg.type === 'cursor') {
+      // Mauszeiger im Canvas (wird nicht gespeichert)
+      const ok = Number.isFinite(msg.x) && Number.isFinite(msg.y);
+      broadcast(room, { type: 'cursor', id: ws.peer.id, userId: user.id, name: user.name,
+        x: ok ? Math.max(0, Math.min(1, msg.x)) : null, y: ok ? Math.max(0, Math.min(1, msg.y)) : null }, ws);
     } else if (msg.type === 'presence') {
       ws.peer.focus = typeof msg.focus === 'string' ? msg.focus.slice(0, 60) : null;
       broadcast(room, { type: 'peers', peers: peers(room) });
@@ -407,11 +430,10 @@ const heartbeat = setInterval(() => {
 function shutdown() {
   clearInterval(heartbeat);
   for (const room of rooms.values()) if (room.timer) saveNow(room);
-  clearTimeout(sessTimer);
-  writeJson(SESSIONS_FILE, sessions);
+  try { db.raw.close(); } catch {}
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(PORT, () => console.log(`OSP-Projektmanagement läuft auf http://localhost:${PORT} (Daten: ${DATA_DIR})`));
+server.listen(PORT, () => console.log(`OSP-Projektmanagement läuft auf http://localhost:${PORT} (Datenbank: ${path.join(DATA_DIR, 'osp.sqlite')})`));

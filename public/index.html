@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="de">
 <head>
+<script src="/static/theme.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/static/favicon.svg">
@@ -8,36 +9,49 @@
 <link rel="stylesheet" href="/static/app.css">
 <title>Projekte - OSP-Projektmanagement</title>
 </head>
-<body>
-<main class="container py-4">
-  <div class="row g-4">
+<body class="bg-body-tertiary">
+<main class="container-xl py-4">
+  <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
+    <div class="me-auto">
+      <h1 class="h4 mb-1">Projekte</h1>
+      <div class="text-body-secondary small">Alle freigeschalteten Teammitglieder sehen und bearbeiten alle Projekte.</div>
+    </div>
+    <form class="d-flex gap-2" id="newForm" style="min-width:min(100%,420px)">
+      <input class="form-control" id="newName" placeholder="Name des neuen Projekts" maxlength="200" required>
+      <button class="btn btn-primary text-nowrap">Projekt anlegen</button>
+    </form>
+  </div>
+  <div class="row g-3 mb-4" id="list"></div>
+
+  <div class="row g-3">
     <div class="col-lg-7">
-      <h1 class="h4">Projekte</h1>
-      <form class="input-group mb-3" id="newForm">
-        <input class="form-control" id="newName" placeholder="Name des neuen Projekts" maxlength="200" required>
-        <button class="btn btn-primary">Projekt anlegen</button>
-      </form>
-      <div class="list-group" id="list"></div>
+      <div class="card h-100"><div class="card-header fw-semibold">Ablauf OSP 2026/27 (laut Kick-off)</div>
+        <div class="table-responsive"><table class="table table-sm mb-0">
+          <thead><tr><th>Datum/Woche</th><th>Was?</th><th>Wo?</th></tr></thead>
+          <tbody>
+            <tr><td>02.11.26 - 06.11.26</td><td>Kick-Off</td><td>WuB</td></tr>
+            <tr><td>Woche nach Kick-Off</td><td>Erste Canvas Version</td><td>WuB</td></tr>
+            <tr><td>02.11. - 06.11.26</td><td>Erstellung Fragenkatalog für Kundengespräche</td><td>DEU</td></tr>
+            <tr><td>09.11. - 13.11.26</td><td>Durchführung Kundengespräche</td><td>FU</td></tr>
+            <tr><td>Woche nach Kundengespräch</td><td>1. Version Pflichtenheft (1.0)</td><td>WuB/FU</td></tr>
+            <tr class="table-warning"><td>spät. 22.12.26</td><td>Abgabe Planungsdokumente</td><td>WuB</td></tr>
+            <tr><td>07.01. - 15.01.27</td><td>Feedback</td><td>WuB, FU</td></tr>
+            <tr><td>ab 25.01.27</td><td>Start Realisierungsphase</td><td>FU</td></tr>
+          </tbody>
+        </table></div>
+      </div>
     </div>
     <div class="col-lg-5">
-      <h2 class="h5">Ablauf OSP 2026/27 (laut Kick-off)</h2>
-      <table class="table table-sm table-bordered">
-        <thead class="table-light"><tr><th>Datum/Woche</th><th>Was?</th><th>Wo?</th></tr></thead>
-        <tbody>
-          <tr><td>02.11.26 - 06.11.26</td><td>Kick-Off</td><td>WuB</td></tr>
-          <tr><td>Woche nach Kick-Off</td><td>Erste Canvas Version</td><td>WuB</td></tr>
-          <tr><td>02.11. - 06.11.26</td><td>Erstellung Fragenkatalog für Kundengespräche</td><td>DEU</td></tr>
-          <tr><td>09.11. - 13.11.26</td><td>Durchführung Kundengespräche</td><td>FU</td></tr>
-          <tr><td>Woche nach Kundengespräch</td><td>1. Version Pflichtenheft (1.0)</td><td>WuB/FU</td></tr>
-          <tr><td>spät. 22.12.26</td><td>Abgabe Planungsdokumente</td><td>WuB</td></tr>
-          <tr><td>07.01. - 15.01.27</td><td>Feedback</td><td>WuB, FU</td></tr>
-          <tr><td>ab 25.01.27</td><td>Start Realisierungsphase</td><td>FU</td></tr>
-        </tbody>
-      </table>
-      <h2 class="h6">Planungsdokumente (WuB)</h2>
-      <p class="small mb-1">Gruppenleistung: Project Canvas (Entwicklungsschritte), Pflichtenheft (vorläufig), Projektstrukturplan,
-        Zeitplan (Gantt-Diagramm), Ressourcen- und Kostenplan, Risikoplan/-matrix, Qualitätsplan</p>
-      <p class="small">Individualleistung: Arbeitspaketbeschreibung</p>
+      <div class="card h-100"><div class="card-header fw-semibold">Planungsdokumente (WuB)</div><div class="card-body small">
+        <div class="fw-semibold mb-1">Gruppenleistung (70 Punkte)</div>
+        <ul class="mb-3">
+          <li>Project Canvas (Entwicklungsschritte)</li><li>Pflichtenheft (vorläufig)</li><li>Projektstrukturplan</li>
+          <li>Zeitplan (Gantt-Diagramm)</li><li>Ressourcen- und Kostenplan</li><li>Risikoplan / -matrix</li><li>Qualitätsplan</li>
+        </ul>
+        <div class="fw-semibold mb-1">Individualleistung</div>
+        <ul class="mb-3"><li>Arbeitspaketbeschreibung (10 Punkte)</li><li>Sonstige Leistung, Engagement (20 Punkte)</li></ul>
+        <div class="text-body-secondary">KI-Unterstützung transparent kennzeichnen, selbst prüfen und verstehen.</div>
+      </div></div>
     </div>
   </div>
 </main>
@@ -46,27 +60,38 @@
 <script>
 (async () => {
   const me = await App.navbar('projects');
+  const today = Math.round(Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z') / 86400000);
   async function load() {
     const list = await App.api('GET', '/projects');
     const box = document.getElementById('list');
-    box.innerHTML = list.length ? '' : '<div class="text-muted">Noch keine Projekte vorhanden.</div>';
+    box.innerHTML = list.length ? '' : '<div class="col"><div class="card card-body text-body-secondary">Noch keine Projekte. Lege oben das erste Projekt an.</div></div>';
     for (const p of list) {
-      const row = document.createElement('div');
-      row.className = 'list-group-item d-flex align-items-center gap-2';
-      row.innerHTML = '<a class="flex-grow-1 text-decoration-none" href="/p/' + encodeURIComponent(p.id) + '">' + App.esc(p.name) + '</a>'
-        + '<small class="text-muted">geändert ' + new Date(p.updatedAt).toLocaleString('de-DE') + '</small>';
+      const left = p.end ? Math.round(Date.parse(p.end + 'T00:00:00Z') / 86400000) - today : null;
+      const col = document.createElement('div');
+      col.className = 'col-md-6 col-xl-4';
+      col.innerHTML = '<div class="card h-100 project-card"><div class="card-body d-flex flex-column">'
+        + '<a class="stretched-link text-decoration-none fw-semibold fs-6 mb-1" href="/p/' + encodeURIComponent(p.id) + '">' + App.esc(p.name) + '</a>'
+        + '<div class="small text-body-secondary mb-3">' + (p.leader ? 'Projektleitung: ' + App.esc(p.leader) : 'Projektleitung noch offen') + '</div>'
+        + '<div class="d-flex flex-wrap gap-2 small mt-auto">'
+        + (left === null ? '<span class="badge text-bg-secondary">kein Abgabedatum</span>' : '<span class="badge ' + (left < 0 ? 'text-bg-secondary' : left < 7 ? 'text-bg-danger' : 'text-bg-primary') + '">'
+          + (left < 0 ? 'Abgabe vorbei' : 'noch ' + left + ' Tage') + '</span>')
+        + '<span class="badge text-bg-light border">' + p.aps + ' Arbeitspakete</span>'
+        + (p.online ? '<span class="badge text-bg-success">' + p.online + ' online</span>' : '')
+        + (p.trello ? '<a class="badge text-bg-primary text-decoration-none position-relative" style="z-index:2" target="_blank" rel="noopener" href="' + App.esc(p.trello) + '">Trello</a>' : '')
+        + '</div></div><div class="card-footer small text-body-secondary d-flex align-items-center">geändert ' + new Date(p.updatedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) + '</div></div>';
       if (me.role === 'admin') {
         const del = document.createElement('button');
-        del.className = 'btn btn-sm btn-outline-danger';
+        del.className = 'btn btn-sm btn-link text-danger ms-auto p-0 position-relative';
+        del.style.zIndex = 2;
         del.textContent = 'Löschen';
         del.onclick = async () => {
           if (!confirm('Projekt "' + p.name + '" wirklich löschen?')) return;
           await App.api('DELETE', '/projects/' + encodeURIComponent(p.id));
           load();
         };
-        row.appendChild(del);
+        col.querySelector('.card-footer').appendChild(del);
       }
-      box.appendChild(row);
+      box.appendChild(col);
     }
   }
   document.getElementById('newForm').addEventListener('submit', async (e) => {

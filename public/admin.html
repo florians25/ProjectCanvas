@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="de">
 <head>
+<script src="/static/theme.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/static/favicon.svg">
@@ -8,20 +9,20 @@
 <link rel="stylesheet" href="/static/app.css">
 <title>Benutzerverwaltung - OSP-Projektmanagement</title>
 </head>
-<body>
+<body class="bg-body-tertiary">
 <main class="container py-4">
   <h1 class="h4 mb-3">Benutzerverwaltung</h1>
   <div id="msg"></div>
-  <h2 class="h6">Warten auf Freischaltung</h2>
-  <div class="table-responsive"><table class="table table-sm align-middle">
-    <thead class="table-light"><tr><th>Name</th><th>E-Mail</th><th>Registriert am</th><th></th></tr></thead>
+  <div class="card mb-4"><div class="card-header fw-semibold">Warten auf Freischaltung</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Name</th><th>E-Mail</th><th>Registriert am</th><th></th></tr></thead>
     <tbody id="pending"></tbody>
-  </table></div>
-  <h2 class="h6 mt-4">Alle Benutzer</h2>
-  <div class="table-responsive"><table class="table table-sm align-middle">
-    <thead class="table-light"><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th></th></tr></thead>
+  </table></div></div>
+  <div class="card"><div class="card-header fw-semibold">Alle Benutzer</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Name</th><th>E-Mail</th><th>Status</th><th>Rolle</th><th></th></tr></thead>
     <tbody id="all"></tbody>
-  </table></div>
+  </table></div></div>
 </main>
 <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="/static/common.js"></script>
