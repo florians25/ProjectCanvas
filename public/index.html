@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Canvas</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="landing">
+  <main class="landing-card">
+    <img src="/static/favicon.svg" alt="" width="56" height="56">
+    <h1>Project Canvas</h1>
+    <p class="lead">Projekte gemeinsam planen – in Echtzeit, ohne Anmeldung.<br>
+      Canvas erstellen, Link teilen, loslegen.</p>
+    <form method="post" action="/new">
+      <button class="btn primary big" type="submit">+ Neues Canvas erstellen</button>
+    </form>
+    <label class="btn ghost" id="importLabel">
+      JSON importieren
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </label>
+
+    <section id="recentWrap" hidden>
+      <h2>Zuletzt geöffnet <small>(nur in diesem Browser)</small></h2>
+      <ul id="recent"></ul>
+    </section>
+
+    <p class="hint">🔒 Jeder, der den Link kennt, kann das Canvas bearbeiten. Die ID ist lang und zufällig –
+      teile den Link nur mit deinem Team.</p>
+  </main>
+<script>
+(function () {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('pc.recent') || '[]'); } catch {}
+  const ul = document.getElementById('recent');
+  if (list.length) {
+    document.getElementById('recentWrap').hidden = false;
+    for (const r of list) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '/c/' + encodeURIComponent(r.id);
+      a.textContent = r.name || 'Unbenanntes Projekt';
+      const s = document.createElement('small');
+      s.textContent = new Date(r.at).toLocaleString('de-DE');
+      const x = document.createElement('button');
+      x.className = 'icon-btn'; x.title = 'Aus Liste entfernen'; x.textContent = '×';
+      x.onclick = () => {
+        list = list.filter((e) => e.id !== r.id);
+        try { localStorage.setItem('pc.recent', JSON.stringify(list)); } catch {}
+        li.remove();
+        if (!list.length) document.getElementById('recentWrap').hidden = true;
+      };
+      li.append(a, s, x);
+      ul.append(li);
+    }
+  }
+  document.getElementById('importFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const res = await fetch('/api/import', { method: 'POST', body: await f.text() });
+    if (!res.ok) return alert('Import fehlgeschlagen: ' + await res.text());
+    const { id } = await res.json();
+    location.href = '/c/' + id;
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+services:
+  projectcanvas:
+    build: .
+    container_name: projectcanvas
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - canvas-data:/data
+
+volumes:
+  canvas-data:
